@@ -1,5 +1,6 @@
 #include "websocket_protocol.h"
 #include "application.h"
+#include "audio_session_recovery.h"
 #include "board.h"
 #include "settings.h"
 #include "system_info.h"
@@ -73,7 +74,13 @@ bool WebsocketProtocol::IsAudioChannelOpened() const {
 
 void WebsocketProtocol::CloseAudioChannel(bool send_goodbye) {
     (void)send_goodbye;  // Websocket doesn't need to send goodbye message
+    const bool notify = websocket_ != nullptr;
+    // Invalidate callbacks captured by the socket about to be destroyed.
+    ++channel_generation_;
     websocket_.reset();
+    if (notify && on_audio_channel_closed_ != nullptr) {
+        on_audio_channel_closed_();
+    }
 }
 
 bool WebsocketProtocol::OpenAudioChannel() {
@@ -86,6 +93,15 @@ bool WebsocketProtocol::OpenAudioChannel() {
     }
 
     error_occurred_ = false;
+
+    const uint32_t generation = ++channel_generation_;
+    websocket_.reset();
+    // A failed attempt must not leave a socket whose later disconnect can
+    // retire the next session. Bump the generation again and drop it.
+    auto abandon = [this]() {
+        ++channel_generation_;
+        websocket_.reset();
+    };
 
     auto network = Board::GetInstance().GetNetwork();
     websocket_ = network->CreateWebSocket(1);
@@ -169,7 +185,10 @@ bool WebsocketProtocol::OpenAudioChannel() {
         });
     });
 
-    websocket_->OnDisconnected([this]() {
+    websocket_->OnDisconnected([this, generation]() {
+        if (!WebSocketCloseEventIsCurrent(generation, channel_generation_)) {
+            return;
+        }
         ESP_LOGI(TAG, "Websocket disconnected");
         if (on_audio_channel_closed_ != nullptr) {
             on_audio_channel_closed_();
@@ -181,12 +200,14 @@ bool WebsocketProtocol::OpenAudioChannel() {
         ESP_LOGE(TAG, "Failed to connect to websocket server: %s",
                  connected.error().ToString().c_str());
         SetError(Lang::Strings::SERVER_NOT_CONNECTED, url);
+        abandon();
         return false;
     }
 
     // Send hello message to describe the client
     auto message = GetHelloMessage();
     if (!SendText(message)) {
+        abandon();
         return false;
     }
 
@@ -197,6 +218,7 @@ bool WebsocketProtocol::OpenAudioChannel() {
     if (!(bits & WEBSOCKET_PROTOCOL_SERVER_HELLO_EVENT)) {
         ESP_LOGE(TAG, "Failed to receive server hello");
         SetError(Lang::Strings::SERVER_TIMEOUT);
+        abandon();
         return false;
     }
 

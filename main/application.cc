@@ -2,6 +2,7 @@
 #include "assets.h"
 #include "assets/lang_config.h"
 #include "audio_codec.h"
+#include "audio_session_recovery.h"
 #include "board.h"
 #include "cjson_utils.h"
 #include "display.h"
@@ -251,6 +252,10 @@ void Application::Run() {
                     // MAIN_EVENT_SEND_AUDIO event would ever be triggered again.
                     while (audio_service_.PopPacketFromSendQueue())
                         ;
+                    // A dead socket returns false without always raising
+                    // MAIN_EVENT_ERROR. Listening keeps wake-word detection off,
+                    // so return to idle when the channel is no longer open.
+                    ReturnToIdleIfAudioSessionClosed("send");
                     break;
                 }
             }
@@ -287,6 +292,7 @@ void Application::Run() {
                 // SystemInfo::PrintTaskList();
                 // SystemInfo::PrintTaskCpuUsage(pdMS_TO_TICKS(1000));
             }
+            ReturnToIdleIfAudioSessionClosed("clock");
         }
         if (bits & MAIN_EVENT_STARTUP_HINT_TIMEOUT) {
             HideStartupWakeWordHint();
@@ -331,7 +337,12 @@ void Application::HandleNetworkDisconnectedEvent() {
     if (state == kDeviceStateConnecting || state == kDeviceStateListening ||
         state == kDeviceStateSpeaking) {
         ESP_LOGI(TAG, "Closing audio channel due to network disconnection");
-        protocol_->CloseAudioChannel();
+        if (protocol_) {
+            protocol_->CloseAudioChannel();
+        }
+        // CloseAudioChannel notifies asynchronously. Set idle here as well so
+        // a transport that does not emit a disconnect still re-enables wake.
+        SetDeviceState(kDeviceStateIdle);
     }
 
     // Update the status bar immediately to show the network state
@@ -582,7 +593,11 @@ void Application::InitializeProtocol() {
 
     protocol_->OnAudioChannelClosed([this, &board]() {
         board.SetPowerSaveLevel(PowerSaveLevel::LOW_POWER);
-        Schedule([this]() {
+        const uint32_t epoch = audio_session_epoch_;
+        Schedule([this, epoch]() {
+            if (!AudioChannelCloseMayReturnToIdle(epoch, audio_session_epoch_, GetDeviceState())) {
+                return;
+            }
             auto display = Board::GetInstance().GetDisplay();
             display->SetChatMessage("system", "");
             SetDeviceState(kDeviceStateIdle);
@@ -819,6 +834,7 @@ void Application::HandleToggleChatEvent() {
     if (state == kDeviceStateIdle) {
         ListeningMode mode = GetDefaultListeningMode();
         if (!protocol_->IsAudioChannelOpened()) {
+            BeginAudioSession();
             SetDeviceState(kDeviceStateConnecting);
             // Schedule to let the state change be processed first (UI update)
             Schedule([this, mode]() { ContinueOpenAudioChannel(mode); });
@@ -828,6 +844,10 @@ void Application::HandleToggleChatEvent() {
     } else if (state == kDeviceStateSpeaking) {
         AbortSpeaking(kAbortReasonNone);
     } else if (state == kDeviceStateListening) {
+        if (!protocol_->IsAudioChannelOpened()) {
+            ReturnToIdleIfAudioSessionClosed("toggle");
+            return;
+        }
         protocol_->CloseAudioChannel();
     }
 }
@@ -878,6 +898,7 @@ void Application::HandleStartListeningEvent() {
 
     if (state == kDeviceStateIdle) {
         if (!protocol_->IsAudioChannelOpened()) {
+            BeginAudioSession();
             SetDeviceState(kDeviceStateConnecting);
             // Schedule to let the state change be processed first (UI update)
             Schedule([this]() { ContinueOpenAudioChannel(kListeningModeManualStop); });
@@ -916,6 +937,19 @@ void Application::HandleWakeWordDetectedEvent() {
     auto wake_word = audio_service_.GetLastWakeWord();
     ESP_LOGI(TAG, "Wake word detected: %s (state: %d)", wake_word.c_str(), (int)state);
 
+    if ((state == kDeviceStateSpeaking || state == kDeviceStateListening) &&
+        !protocol_->IsAudioChannelOpened()) {
+        // The detector has already stopped. A dead session must not stay in
+        // listening, where wake-word detection is off, until BOOT is pressed.
+        ESP_LOGW(TAG, "Wake word during a closed audio session; opening a new one");
+        protocol_->CloseAudioChannel();
+        if (!SetDeviceState(kDeviceStateIdle)) {
+            audio_service_.EnableWakeWordDetection(true);
+            return;
+        }
+        state = kDeviceStateIdle;
+    }
+
     if (state == kDeviceStateIdle) {
         BeginWakeWordInvoke(wake_word);
     } else if (state == kDeviceStateNotifying) {
@@ -944,7 +978,25 @@ void Application::HandleWakeWordDetectedEvent() {
     }
 }
 
+void Application::BeginAudioSession() { ++audio_session_epoch_; }
+
+void Application::ReturnToIdleIfAudioSessionClosed(const char* reason) {
+    const bool channel_open = protocol_ && protocol_->IsAudioChannelOpened();
+    if (DecideAudioSessionRecovery(GetDeviceState(), channel_open) !=
+        AudioSessionRecovery::kReturnToIdle) {
+        return;
+    }
+    ESP_LOGW(TAG, "Audio session closed (%s); returning to idle so wake can run", reason);
+    if (protocol_) {
+        protocol_->CloseAudioChannel();
+    }
+    SetDeviceState(kDeviceStateIdle);
+}
+
 void Application::BeginWakeWordInvoke(const std::string& wake_word) {
+    // Invalidate close notifications from the session this wake replaces.
+    BeginAudioSession();
+
     // Must run in the main task with the device in idle state
     audio_service_.EncodeWakeWord();
 
@@ -971,6 +1023,9 @@ void Application::BeginWakeWordInvoke(const std::string& wake_word) {
 void Application::ContinueWakeWordInvoke(const std::string& wake_word) {
     // Check state again in case it was changed during scheduling
     if (GetDeviceState() != kDeviceStateConnecting) {
+        if (GetDeviceState() == kDeviceStateIdle) {
+            audio_service_.EnableWakeWordDetection(true);
+        }
         return;
     }
 
