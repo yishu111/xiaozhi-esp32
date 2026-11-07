@@ -1,0 +1,156 @@
+{
+  "checksum": 52544,
+  "compatibility": "wn9_nihaoxiaozhi_tts is present, no mn model is present, and index.json version is absent or at most 1",
+  "file_count": 24,
+  "files": [
+    {
+      "name": "font_noto_sans_common_16_4.bin",
+      "sha256": "6c801b34ec686e6e31223eceedea2efe5b0cf294b3556d91087a683c86a54384",
+      "size": 885948
+    },
+    {
+      "name": "srmodels.bin",
+      "sha256": "d1397578a7171deddf58e27234c57f9bbf116f1991e27f08453715ceb9a32732",
+      "size": 291042
+    },
+    {
+      "index_version": 1,
+      "name": "index.json",
+      "sha256": "321bdd576e18bb43e8ed2ec219d69ffdc4f621cd5e4b44e396580df6f48a7d32",
+      "size": 2053,
+      "srmodels": "srmodels.bin"
+    },
+    {
+      "name": "angry.png",
+      "sha256": "39cbbb0690078bbf1502e655b611aea5ab183cdb6e940866ae05a6853a31b7a6",
+      "size": 1549
+    },
+    {
+      "name": "confident.png",
+      "sha256": "2408e1a3d58816118abd12c33f9e8aed07a5665887071cdbb5a25c33eba78521",
+      "size": 1573
+    },
+    {
+      "name": "confused.png",
+      "sha256": "759bbcdbfd20fa804e9376b0bfc5cf70473340cdaf301275b00e89e96183ca55",
+      "size": 1540
+    },
+    {
+      "name": "cool.png",
+      "sha256": "b25a184c8ecb22f80fa6106d6c5051afd0d4f0f3dc538fef635b44b52f1cf070",
+      "size": 1556
+    },
+    {
+      "name": "crying.png",
+      "sha256": "fc9838212b4397490902e732677e67b1bbf0f0c5ac25b5abba0c5f03d5eb5ea0",
+      "size": 1824
+    },
+    {
+      "name": "delicious.png",
+      "sha256": "e1f0f0507af86cb12d1b700859a12c609a6fce141a074bf8c2cba03459f9778c",
+      "size": 1646
+    },
+    {
+      "name": "embarrassed.png",
+      "sha256": "707f529972151acd7d600fe9749962b63545bde93670fd6afac3107c000a9db7",
+      "size": 1706
+    },
+    {
+      "name": "funny.png",
+      "sha256": "6b95dc4e9d2d04f2a0981dc2e79e0fdbffa6105d92ce1c2adce3d0bf9887eb04",
+      "size": 1894
+    },
+    {
+      "name": "happy.png",
+      "sha256": "15fa0536f7e77a959c1f980d7fbaa7cd869415ebfd898f2f3fd437f85ce1ecce",
+      "size": 1478
+    },
+    {
+      "name": "kissy.png",
+      "sha256": "1b2559f6a74d92185341a8b184d6bba452d3c6a3f705a51316087edf0b7e6559",
+      "size": 1635
+    },
+    {
+      "name": "laughing.png",
+      "sha256": "98ef3f732ef8f8734e344c62ac0d59e6e5eac40e4ecf9c1b27e7e962ee102032",
+      "size": 1784
+    },
+    {
+      "name": "loving.png",
+      "sha256": "6847672891cf1b1ad67631d7dc656b3d57820bbe73f976769dc78b9f3b0d4f26",
+      "size": 1633
+    },
+    {
+      "name": "neutral.png",
+      "sha256": "fc8d0842018d3443250f710e947bc51f3fb550029d4ebb043a5e3c4fbdf9f4d9",
+      "size": 1392
+    },
+    {
+      "name": "relaxed.png",
+      "sha256": "2366cb19e77bd86982222ee73eb648aa50f1678292fc400e0bfb43c5f79617a9",
+      "size": 1593
+    },
+    {
+      "name": "sad.png",
+      "sha256": "1d718d105b47a3e24b54ac1bf6372e2a65040564c7ad07ea233e9c76f5cb74c4",
+      "size": 1528
+    },
+    {
+      "name": "shocked.png",
+      "sha256": "46219d8bc0b897c9dd4bd210d6985241a25ef93e18a3e69b89355dc6f20939e0",
+      "size": 1788
+    },
+    {
+      "name": "silly.png",
+      "sha256": "c8a17136dae26d2ed0667121a70bf47be706069132b7acd11cfb8ab95f59864c",
+      "size": 1708
+    },
+    {
+      "name": "sleepy.png",
+      "sha256": "bfe6f70d4ebce11ca5a5abd69db9f4de86c052512f520a0aa519bd1bb80504d1",
+      "size": 1694
+    },
+    {
+      "name": "surprised.png",
+      "sha256": "e289c0f983e7d22ede33cbb75a9afb6db1b8c03ec63533c1a00bb4924e9c6e63",
+      "size": 1530
+    },
+    {
+      "name": "thinking.png",
+      "sha256": "b16177a635a5bd55141f577086e1281ac58263bac0a35d8a0ffeb4f4af8402be",
+      "size": 1736
+    },
+    {
+      "name": "winking.png",
+      "sha256": "c7a71e55f9517598c310c9c6d1482122cfaaeaa296fbeeeaddaf8d5a304972f1",
+      "size": 1579
+    }
+  ],
+  "image_sha256": "e3d35f322138618393209473fbb2ec259ac886583f0a5c69de722324d1c645c6",
+  "index_version": 1,
+  "models": [
+    {
+      "files": [
+        {
+          "info": "wakenet9l_tts1h8_\u4f60\u597d\u5c0f\u667a_3_0.631_0.635",
+          "name": "_MODEL_INFO_",
+          "sha256": "058c04f027862ab745c056b8c8d896396b1cf871e0a8098537610f1a0e16a108",
+          "size": 44
+        },
+        {
+          "name": "wn9_data",
+          "sha256": "3bd2998013971a5999ca024745bf282381ce93c1ac79468a674abfe3d91399d8",
+          "size": 289638
+        },
+        {
+          "name": "wn9_index",
+          "sha256": "b463a5051d01bddc1f5723cddc8f3d5f11a6c750106694ca4aa0c8fdc235032c",
+          "size": 1200
+        }
+      ],
+      "name": "wn9_nihaoxiaozhi_tts"
+    }
+  ],
+  "srmodels_file": "srmodels.bin",
+  "wake_compatible_with_this_app": true
+}
