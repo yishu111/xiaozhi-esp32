@@ -1,0 +1,20 @@
+diff --git a/components/bootloader_support/bootloader_flash/src/bootloader_flash.c b/components/bootloader_support/bootloader_flash/src/bootloader_flash.c
+index 49f16336..74bd3b3d 100644
+--- a/components/bootloader_support/bootloader_flash/src/bootloader_flash.c
++++ b/components/bootloader_support/bootloader_flash/src/bootloader_flash.c
+@@ -939,6 +939,15 @@ static IRAM_ATTR bool is_xmc_chip_strict(uint32_t rdid)
+         if (cpid >= 0x15 && cpid <= 0x16) {
+             matched =  true;
+         }
++    } else if (mfid == 0x70) {
++        // XMC parts whose RDID is vendor 0x20, memory-type 0x70 and a 16 MB
++        // capacity id (0x207018, reported as manufacturer 0x20 / device 0x7018)
++        // are absent from v6.0.1. is_xmc_chip_strict() then fails the XMC
++        // startup flow and the bootloader resets in a loop. 0x18 is inside
++        // the same capacity window Espressif already accepts for mfid 0x41.
++        if (cpid >= 0x17 && cpid <= 0x20) {
++            matched = true;
++        }
+     }
+     return matched;
+ }

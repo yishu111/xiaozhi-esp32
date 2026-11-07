@@ -5,6 +5,7 @@
 #include "protocol.h"
 
 #include <web_socket.h>
+#include <cstdint>
 #include <freertos/FreeRTOS.h>
 #include <freertos/event_groups.h>
 
@@ -24,6 +25,9 @@ public:
 private:
     EventGroupHandle_t event_group_handle_;
     std::shared_ptr<WebSocket> websocket_;
+    // Bumped before the previous socket is destroyed so its disconnect
+    // callback cannot retire the socket that replaced it.
+    std::uint32_t channel_generation_ = 0;
     int version_ = 1;
 
     void ParseServerHello(const cJSON* root);

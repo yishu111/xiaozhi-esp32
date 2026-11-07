@@ -17,6 +17,7 @@
 #include "protocol.h"
 #include "ota.h"
 #include "audio_service.h"
+#include "audio_session_recovery.h"
 #include "device_state.h"
 #include "device_state_machine.h"
 #include "notify/notify_player.h"
@@ -156,6 +157,9 @@ private:
     bool play_popup_on_listening_ = false;  // Flag to play popup sound after state changes to listening
     bool pending_listening_start_ = false;  // Waiting for playback to drain before starting listening (auto mode)
     int clock_ticks_ = 0;
+    // Incremented when a new wake/connect attempt starts. Close notifications
+    // captured under an older value must not force that attempt back to idle.
+    std::uint32_t audio_session_epoch_ = 0;
     TaskHandle_t activation_task_handle_ = nullptr;
 
 
@@ -169,6 +173,8 @@ private:
     void HandleActivationDoneEvent();
     void HandleWakeWordDetectedEvent();
     void ContinueOpenAudioChannel(ListeningMode mode);
+    void BeginAudioSession();
+    void ReturnToIdleIfAudioSessionClosed(const char* reason);
     void BeginWakeWordInvoke(const std::string& wake_word);
     void ContinueWakeWordInvoke(const std::string& wake_word);
     void StartListeningAudio();
