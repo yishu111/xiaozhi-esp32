@@ -10,9 +10,12 @@
         },
         {
             "name": "bread-compact-wifi-lcd-gc9a01",
+            "wake_word": "custom",
+            "wake_commands": "gc9a01_wake_commands.json",
             "sdkconfig_append": [
                 "CONFIG_LCD_GC9A01_240X240=y",
-                "CONFIG_LV_USE_CANVAS=y"
+                "CONFIG_LV_USE_CANVAS=y",
+                "CONFIG_OTA_URL=\"http://192.168.31.73:8003/xiaozhi/ota/\""
             ]
         }
     ]

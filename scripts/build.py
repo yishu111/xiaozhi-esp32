@@ -295,7 +295,7 @@ def _print_wake_word_list(wake_words: list[dict[str, object]]) -> None:
             f"{str(item['model']):<{model_width}}  "
             f"{str(item['phrase']):<{phrase_width}}  {targets}"
         )
-    print("\nSpecial values: nihaoxiaozhi, hiesp, disabled")
+    print("\nSpecial values: nihaoxiaozhi, hiesp, custom, disabled")
 
 
 def _board_supports_wake_word(
@@ -353,11 +353,33 @@ def _wake_word_sdkconfig_options(
         options.append("CONFIG_WAKE_WORD_DISABLED=y")
         return normalized, options, ["CONFIG_WAKE_WORD_DISABLED"]
 
+    if normalized == "custom":
+        # One Chinese MultiNet7 model. English MultiNet stays off. The phrase
+        # list is not a single Kconfig string; build_default_assets.py merges
+        # a variant JSON when the board asks for one.
+        if target not in _AFE_WAKE_WORD_TARGETS:
+            raise ValueError(
+                "Custom MultiNet wake word requires ESP32-S3, ESP32-P4, or "
+                f"ESP32-S31 with PSRAM, not {target}"
+            )
+        options.extend((
+            "CONFIG_USE_CUSTOM_WAKE_WORD=y",
+            "CONFIG_SR_MN_CN_NONE=n",
+            "CONFIG_SR_MN_CN_MULTINET7_QUANT=y",
+            "CONFIG_SR_MN_EN_NONE=y",
+            "CONFIG_SR_MN_EN_MULTINET7_QUANT=n",
+        ))
+        return "custom", options, [
+            "CONFIG_USE_CUSTOM_WAKE_WORD",
+            "CONFIG_SR_MN_CN_MULTINET7_QUANT",
+            "CONFIG_SR_MN_EN_NONE",
+        ]
+
     if target not in _ESP_WAKE_WORD_TARGETS | _AFE_WAKE_WORD_TARGETS:
         raise ValueError(f"Wake-word selection is not supported for target {target}")
     if not _WAKE_WORD_MODEL_PATTERN.fullmatch(normalized):
         raise ValueError(
-            f"Invalid wake word {wake_word!r}. Use 'disabled', "
+            f"Invalid wake word {wake_word!r}. Use 'disabled', 'custom', "
             "'nihaoxiaozhi', 'hiesp', or an ESP-SR model name such as "
             "'wn9_jarvis_tts'."
         )
@@ -375,6 +397,70 @@ def _wake_word_sdkconfig_options(
     model_symbol = f"CONFIG_SR_WN_{normalized.upper()}"
     options.extend((f"{implementation}=y", f"{model_symbol}=y"))
     return normalized, options, [implementation, model_symbol]
+
+
+def _sdkconfig_string(value: str) -> str:
+    """Return value for a quoted sdkconfig string, rejecting escapes."""
+    if (
+        not isinstance(value, str)
+        or not value
+        or any(char in value for char in '"\\\r\n')
+    ):
+        raise ValueError(f"Unsupported sdkconfig string {value!r}")
+    return value
+
+
+def _wake_threshold_percent(value: object) -> int:
+    """Convert a device threshold in (0, 1] to the Kconfig percent."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"Invalid wake-word threshold {value!r}") from error
+    if not 0 < number <= 1:
+        raise ValueError(
+            f"Wake-word threshold {value!r} must be the device value "
+            "in (0, 1], for example 0.2"
+        )
+    percent = int(round(number * 100))
+    if not 1 <= percent <= 99:
+        raise ValueError(f"Wake-word threshold {value!r} is outside 1..99%")
+    return percent
+
+
+def _custom_wake_phrase_options(board: str, build: dict[str, Any]) -> list[str]:
+    """Fill the single Kconfig phrase from the first entry of a variant file.
+
+    Kconfig can store only one command. The assets packer writes the full
+    list from the same file. Boards without ``wake_commands`` keep the
+    Kconfig defaults.
+    """
+    relative = build.get("wake_commands")
+    if relative is None:
+        return []
+    if not isinstance(relative, str) or not relative.strip():
+        raise ValueError(f"{board}: wake_commands must be a file path")
+    path = _BOARDS_DIR / board / relative
+    if not path.is_file():
+        raise ValueError(f"Wake-command file not found: {path}")
+    try:
+        spec = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise ValueError(f"{path}: invalid JSON ({error})") from error
+    commands = spec.get("commands") if isinstance(spec, dict) else None
+    if not isinstance(commands, list) or not commands:
+        raise ValueError(f"{path}: commands must be a non-empty list")
+    first = commands[0]
+    if not isinstance(first, dict):
+        raise ValueError(f"{path}: the first command must be an object")
+    command = _sdkconfig_string(str(first.get("command", "")))
+    display = _sdkconfig_string(str(first.get("text", "")))
+    percent = _wake_threshold_percent(spec.get("threshold", 0.2))
+    return [
+        f'CONFIG_CUSTOM_WAKE_WORD="{command}"',
+        f'CONFIG_CUSTOM_WAKE_WORD_DISPLAY="{display}"',
+        f"CONFIG_CUSTOM_WAKE_WORD_THRESHOLD={percent}",
+    ]
+
 
 ################################################################################
 # board / variant related functions
@@ -1614,6 +1700,12 @@ def build_board(
         wake_word_supported = _board_supports_wake_word(target, sdkconfig_append)
         requested_wake_word = wake_word
         if requested_wake_word is None:
+            preset = build.get("wake_word")
+            if preset is not None:
+                if not isinstance(preset, str) or not preset.strip():
+                    raise ValueError(f"{name}: wake_word must be a non-empty string")
+                requested_wake_word = preset.strip()
+        if requested_wake_word is None:
             requested_wake_word = "disabled"
             if wake_word_supported:
                 requested_wake_word = (
@@ -1624,6 +1716,11 @@ def build_board(
             wake_word_options,
             wake_word_symbols,
         ) = _wake_word_sdkconfig_options(requested_wake_word, target)
+        if selected_wake_word == "custom":
+            wake_word_options = _merge_sdkconfig_options(
+                wake_word_options,
+                _custom_wake_phrase_options(board_type, build),
+            )
         if selected_wake_word != "disabled" and not wake_word_supported:
             raise ValueError(
                 f"Wake-word detection is disabled or unsupported for {final_name!r}; "
@@ -1781,8 +1878,9 @@ def main(argv: Optional[list[str]] = None) -> None:
         metavar="MODEL",
         help=(
             "Wake-word model (for example wn9_jarvis_tts), "
-            "'nihaoxiaozhi', 'hiesp', or 'disabled'. Defaults to nihaoxiaozhi "
-            "for zh-CN/zh-TW and hiesp otherwise; disabled on unsupported boards"
+            "'nihaoxiaozhi', 'hiesp', 'custom', or 'disabled'. Defaults to "
+            "nihaoxiaozhi for zh-CN/zh-TW and hiesp otherwise, unless the "
+            "variant sets wake_word; disabled on unsupported boards"
         ),
     )
     parser.add_argument(
