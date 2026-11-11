@@ -764,6 +764,100 @@ def read_custom_wake_word_from_sdkconfig(sdkconfig_path):
     return None
 
 
+def load_wake_commands(path):
+    """Load a variant command list. Other boards do not pass this file.
+
+    ``threshold`` is the device value in (0, 1], the same number written into
+    index.json. Kconfig stores that value as a percent (0.2 -> 20).
+    ``command`` is space-separated lowercase pinyin, never mixed English text.
+    """
+    with open(path, "r", encoding="utf-8") as handle:
+        data = json.load(handle)
+    if not isinstance(data, dict):
+        raise ValueError(f"{path}: wake commands file must be a JSON object")
+
+    commands = data.get("commands")
+    if not isinstance(commands, list) or not commands:
+        raise ValueError(f"{path}: commands must be a non-empty list")
+
+    normalized = []
+    for index, item in enumerate(commands):
+        if not isinstance(item, dict):
+            raise ValueError(f"{path}: commands[{index}] must be an object")
+        command = item.get("command")
+        text = item.get("text")
+        action = item.get("action")
+        if not isinstance(command, str) or re.fullmatch(r"[a-z]+(?: [a-z]+)*", command) is None:
+            raise ValueError(
+                f"{path}: commands[{index}].command must be space-separated "
+                f"lowercase pinyin, got {command!r}"
+            )
+        if not isinstance(text, str) or not text.strip() or any(char in text for char in "\r\n"):
+            raise ValueError(f"{path}: commands[{index}].text must be a single-line string")
+        if action != "wake":
+            raise ValueError(f"{path}: commands[{index}].action must be 'wake'")
+        normalized.append({
+            "command": command,
+            "text": text,
+            "action": "wake",
+        })
+
+    language = data.get("language", "cn")
+    if language != "cn":
+        raise ValueError(f"{path}: language must be cn, got {language!r}")
+
+    duration = data.get("duration", 3000)
+    if isinstance(duration, bool) or not isinstance(duration, int) or duration <= 0:
+        raise ValueError(f"{path}: duration must be a positive number of milliseconds")
+
+    threshold = data.get("threshold", 0.2)
+    try:
+        threshold = float(threshold)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{path}: invalid threshold {threshold!r}") from error
+    if isinstance(data.get("threshold"), bool) or not 0 < threshold <= 1:
+        raise ValueError(
+            f"{path}: threshold must be the device value in (0, 1], for example 0.2"
+        )
+
+    return {
+        "language": language,
+        "duration": duration,
+        "threshold": threshold,
+        "commands": normalized,
+    }
+
+
+def compose_multinet_model_info(custom_wake_word_config, multinet_model_names, wake_commands):
+    """Build index.json ``multinet_model``.
+
+    A variant command file replaces the single Kconfig phrase. Boards that do
+    not pass one keep that single phrase.
+    """
+    language = get_language_from_multinet_models(multinet_model_names) or "cn"
+    info = {
+        "language": language,
+        "duration": 3000,
+        "threshold": 0.2,
+        "commands": [],
+    }
+    if custom_wake_word_config:
+        info["threshold"] = custom_wake_word_config["threshold"]
+        info["commands"] = [{
+            "command": custom_wake_word_config["wake_word"],
+            "text": custom_wake_word_config["display"],
+            "action": "wake",
+        }]
+    if wake_commands:
+        info["language"] = wake_commands["language"]
+        info["duration"] = wake_commands["duration"]
+        info["threshold"] = wake_commands["threshold"]
+        info["commands"] = wake_commands["commands"]
+    if not info["commands"]:
+        raise ValueError("Custom wake word is enabled but no commands were provided")
+    return info
+
+
 def get_language_from_multinet_models(multinet_models):
     """
     Determine language from multinet model names
@@ -973,6 +1067,9 @@ def main():
     parser.add_argument('--name_length', type=int, default=32, help='Base assets filename field length')
     parser.add_argument('--max_size', type=lambda v: int(v, 0), default=None,
                         help='Fail if assets.bin exceeds this many bytes (decimal or 0x hex)')
+    parser.add_argument('--wake_commands',
+                        help='Variant JSON command list. Replaces the single Kconfig phrase. '
+                             'Omit it to keep the one-command behavior.')
     
     args = parser.parse_args()
     
@@ -1054,30 +1151,28 @@ def main():
     # Get extra files path if provided
     extra_files_path = args.extra_files
     
-    # Read custom wake word configuration
+    # Read custom wake word configuration. A variant file, when passed, is
+    # the command list. Boards that do not pass one stay on the single phrase.
     custom_wake_word_config = read_custom_wake_word_from_sdkconfig(args.sdkconfig)
+    wake_commands = None
+    if args.wake_commands:
+        if wake_word_config['use_custom_wake_word']:
+            wake_commands = load_wake_commands(args.wake_commands)
+        else:
+            print("  Note: wake commands file ignored because USE_CUSTOM_WAKE_WORD is disabled")
     multinet_model_info = None
     
-    if custom_wake_word_config and multinet_model_paths:
-        # Determine language from multinet models
-        language = get_language_from_multinet_models(multinet_model_names)
-        
-        # Build multinet_model info structure
-        multinet_model_info = {
-            "language": language,
-            "duration": 3000,  # Default duration in ms
-            "threshold": custom_wake_word_config['threshold'],
-            "commands": [
-                {
-                    "command": custom_wake_word_config['wake_word'],
-                    "text": custom_wake_word_config['display'],
-                    "action": "wake"
-                }
-            ]
-        }
-        print(f"  custom wake word: {custom_wake_word_config['wake_word']} ({custom_wake_word_config['display']})")
-        print(f"  wake word language: {language}")
-        print(f"  wake word threshold: {custom_wake_word_config['threshold']}")
+    if multinet_model_paths and (custom_wake_word_config or wake_commands):
+        multinet_model_info = compose_multinet_model_info(
+            custom_wake_word_config, multinet_model_names, wake_commands
+        )
+        phrases = ", ".join(
+            f"{item['command']} ({item['text']})" for item in multinet_model_info["commands"]
+        )
+        print(f"  custom wake commands: {phrases}")
+        print(f"  wake word language: {multinet_model_info['language']}")
+        print(f"  wake word threshold: {multinet_model_info['threshold']}")
+        print(f"  wake word duration: {multinet_model_info['duration']}")
 
     if args.base_assets:
         try:

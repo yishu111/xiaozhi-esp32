@@ -268,5 +268,154 @@ class ConfiguredAssetsTest(unittest.TestCase):
             self.assertFalse((root / "unused.bin").exists())
 
 
+class WakeCommandAssetsTest(unittest.TestCase):
+    COMMANDS = ROOT / "main/boards/bread-compact-wifi-lcd/gc9a01_wake_commands.json"
+
+    def sdkconfig(self, root, custom=True):
+        path = root / "sdkconfig"
+        if custom:
+            path.write_text(
+                "\n".join([
+                    'CONFIG_IDF_TARGET="esp32s3"',
+                    "CONFIG_USE_CUSTOM_WAKE_WORD=y",
+                    "CONFIG_USE_AFE_WAKE_WORD=n",
+                    "CONFIG_SR_MN_CN_MULTINET7_QUANT=y",
+                    'CONFIG_CUSTOM_WAKE_WORD="xiao tu dou"',
+                    'CONFIG_CUSTOM_WAKE_WORD_DISPLAY="小土豆"',
+                    "CONFIG_CUSTOM_WAKE_WORD_THRESHOLD=20",
+                    "",
+                ]),
+                encoding="utf-8",
+            )
+        else:
+            path.write_text(
+                'CONFIG_IDF_TARGET="esp32s3"\n'
+                "CONFIG_USE_AFE_WAKE_WORD=y\n"
+                "CONFIG_SR_WN_WN9_NIHAOXIAOZHI_TTS=y\n",
+                encoding="utf-8",
+            )
+        return path
+
+    def fake_models(self, root, names):
+        for name in names:
+            model_dir = root / "models/multinet_model" / name
+            model_dir.mkdir(parents=True)
+            (model_dir / "weights").write_bytes(name.encode() + b"-weights")
+        wakenet = root / "models/wakenet_model/wn9_nihaoxiaozhi_tts"
+        wakenet.mkdir(parents=True)
+        (wakenet / "_MODEL_INFO_").write_bytes(b"wn9")
+        (wakenet / "wn9_data").write_bytes(b"wakenet-weights")
+
+    def run_builder(self, root, sdkconfig, output, wake_commands=None):
+        args = [
+            sys.executable, str(ROOT / "scripts/build_default_assets.py"),
+            "--sdkconfig", str(sdkconfig),
+            "--output", str(output),
+            "--esp_sr_model_path", str(root / "models"),
+        ]
+        if wake_commands is not None:
+            args.extend(["--wake_commands", str(wake_commands)])
+        return subprocess.run(args, text=True, capture_output=True)
+
+    def test_single_kconfig_phrase_is_unchanged_without_a_variant_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.fake_models(root, ["mn7_cn", "fst"])
+            result = self.run_builder(root, self.sdkconfig(root), root / "assets.bin")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            index = json.loads(BUILD.read_assets_entries(root / "assets.bin")["index.json"][0])
+            self.assertEqual(index["multinet_model"]["commands"], [{
+                "command": "xiao tu dou",
+                "text": "小土豆",
+                "action": "wake",
+            }])
+            self.assertEqual(index["multinet_model"]["threshold"], 0.2)
+            self.assertEqual(index["multinet_model"]["duration"], 3000)
+
+    def test_gc9a01_file_replaces_the_single_phrase_with_three_commands(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.fake_models(root, ["mn7_cn", "fst"])
+            result = self.run_builder(
+                root, self.sdkconfig(root), root / "assets.bin", self.COMMANDS,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            files = BUILD.read_assets_entries(root / "assets.bin")
+            index = json.loads(files["index.json"][0])
+            spec = json.loads(self.COMMANDS.read_text(encoding="utf-8"))
+            self.assertEqual(index["multinet_model"], {
+                "language": "cn",
+                "duration": 3000,
+                "threshold": 0.2,
+                "commands": spec["commands"],
+            })
+            self.assertNotIn("xiao tu dou", files["index.json"][0].decode())
+            words = []
+            for command in index["multinet_model"]["commands"]:
+                if command["action"] == "wake" and command["text"] not in words:
+                    words.append(command["text"])
+            self.assertEqual(words, ["你好Taky", "hi Taky", "你好小智"])
+            models = files["srmodels.bin"][0]
+            self.assertEqual(struct.unpack_from("<I", models)[0], 2)
+            names = []
+            offset = 4
+            for _ in range(2):
+                names.append(models[offset:offset + 32].split(b"\0", 1)[0].decode())
+                file_count = struct.unpack_from("<I", models, offset + 32)[0]
+                offset += 36 + file_count * 40
+            self.assertCountEqual(names, ["fst", "mn7_cn"])
+            self.assertNotIn(b"mn7_en", models)
+            self.assertNotIn(b"wn9_nihaoxiaozhi_tts", models)
+
+    def test_wake_commands_file_is_ignored_for_wakenet(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.fake_models(root, ["mn7_cn"])
+            result = self.run_builder(
+                root, self.sdkconfig(root, custom=False), root / "assets.bin", self.COMMANDS,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            index = json.loads(BUILD.read_assets_entries(root / "assets.bin")["index.json"][0])
+            self.assertNotIn("multinet_model", index)
+            self.assertIn("ignored because USE_CUSTOM_WAKE_WORD is disabled", result.stdout)
+
+    def test_cmake_passes_the_command_file_only_for_gc9a01(self):
+        cmake = (ROOT / "main/CMakeLists.txt").read_text(encoding="utf-8")
+        self.assertIn(
+            "CONFIG_BOARD_TYPE_BREAD_COMPACT_WIFI_LCD AND CONFIG_LCD_GC9A01_240X240",
+            cmake,
+        )
+        self.assertIn("gc9a01_wake_commands.json", cmake)
+        self.assertEqual(cmake.count("--wake_commands"), 2)
+
+    def test_gc9a01_commands_stay_inside_the_multinet_syllables(self):
+        spec = json.loads(self.COMMANDS.read_text(encoding="utf-8"))
+        allowed = {"ni", "hao", "te", "ji", "hai", "xiao", "zhi"}
+        tokens = []
+        for item in spec["commands"]:
+            tokens.extend(item["command"].split(" "))
+        self.assertTrue(tokens)
+        self.assertTrue(set(tokens) <= allowed)
+        self.assertNotIn("tei", tokens)
+        self.assertNotIn("ta", tokens)
+        self.assertNotIn("ke", tokens)
+
+    def test_rejected_command_strings(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "bad.json"
+            path.write_text(json.dumps({
+                "language": "cn",
+                "duration": 3000,
+                "threshold": 0.2,
+                "commands": [{
+                    "command": "ni hao Taky",
+                    "text": "你好Taky",
+                    "action": "wake",
+                }],
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "lowercase pinyin"):
+                BUILD.load_wake_commands(path)
+
+
 if __name__ == "__main__":
     unittest.main()

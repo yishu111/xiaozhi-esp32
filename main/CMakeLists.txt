@@ -1381,6 +1381,17 @@ endforeach()
 endif()
 
 
+# Kconfig stores one CUSTOM_WAKE_WORD. This board's GC9A01 variant needs
+# several MultiNet commands, so the assets packer reads them from a JSON file.
+# Every other board, including the ST7789 variant, leaves the path empty.
+function(xiaozhi_variant_wake_commands out_var)
+    set(commands "")
+    if(CONFIG_BOARD_TYPE_BREAD_COMPACT_WIFI_LCD AND CONFIG_LCD_GC9A01_240X240)
+        set(commands "${PROJECT_DIR}/main/boards/bread-compact-wifi-lcd/gc9a01_wake_commands.json")
+    endif()
+    set(${out_var} "${commands}" PARENT_SCOPE)
+endfunction()
+
 # Function to build default assets based on configuration
 function(build_default_assets_bin)
     # Set output path for generated assets.bin
@@ -1425,6 +1436,12 @@ function(build_default_assets_bin)
 
     list(APPEND BUILD_ARGS "--esp_sr_model_path" "${ESP_SR_MODEL_PATH}")
     list(APPEND BUILD_ARGS "--noto_fonts_path" "${NOTO_FONTS_PATH}")
+
+    xiaozhi_variant_wake_commands(VARIANT_WAKE_COMMANDS)
+    if(VARIANT_WAKE_COMMANDS)
+        list(APPEND BUILD_ARGS "--wake_commands" "${VARIANT_WAKE_COMMANDS}")
+        list(APPEND DEFAULT_ASSETS_DEPENDENCIES "${VARIANT_WAKE_COMMANDS}")
+    endif()
 
     # Enforce assets.bin fits the flash partition (e.g. ESP-HI 4MB map uses 1MB assets).
     partition_table_get_partition_info(assets_partition_size "--partition-name assets" "size")
@@ -1526,10 +1543,16 @@ function(configure_assets_models assets_source assets_output)
     if(assets_limit)
         list(APPEND MODEL_ARGS "--max_size" "${assets_limit}")
     endif()
+    xiaozhi_variant_wake_commands(VARIANT_WAKE_COMMANDS)
+    set(MODEL_DEPENDS "${assets_source}" "${SDKCONFIG}" "${PROJECT_DIR}/scripts/build_default_assets.py")
+    if(VARIANT_WAKE_COMMANDS)
+        list(APPEND MODEL_ARGS "--wake_commands" "${VARIANT_WAKE_COMMANDS}")
+        list(APPEND MODEL_DEPENDS "${VARIANT_WAKE_COMMANDS}")
+    endif()
     add_custom_command(
         OUTPUT "${assets_output}"
         COMMAND python ${PROJECT_DIR}/scripts/build_default_assets.py ${MODEL_ARGS}
-        DEPENDS "${assets_source}" "${SDKCONFIG}" "${PROJECT_DIR}/scripts/build_default_assets.py"
+        DEPENDS ${MODEL_DEPENDS}
         COMMENT "Configuring speech models in custom assets"
         VERBATIM
     )

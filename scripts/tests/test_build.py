@@ -1069,6 +1069,10 @@ class BuildOptionTests(unittest.TestCase):
         self.assertIn("CONFIG_WAKE_WORD_DISABLED=y", options)
         self.assertEqual(symbols, ["CONFIG_WAKE_WORD_DISABLED"])
 
+    def test_custom_wake_word_is_rejected_on_lite_targets(self):
+        with self.assertRaisesRegex(ValueError, "ESP32-S3"):
+            build._wake_word_sdkconfig_options("custom", "esp32c3")
+
     def test_incompatible_wake_word_model_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "WakeNet9s"):
             build._wake_word_sdkconfig_options(
@@ -1464,6 +1468,69 @@ class LanguageBuildTests(unittest.TestCase):
         ):
             yield prepare, configure, validate
 
+    def test_gc9a01_defaults_to_chinese_multinet_and_keeps_the_other_variant(self):
+        commands = json.loads(
+            (ROOT / "main/boards/bread-compact-wifi-lcd/gc9a01_wake_commands.json")
+            .read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            [item["text"] for item in commands["commands"]],
+            ["你好Taky", "hi Taky", "你好小智"],
+        )
+        with self.mock_idf() as (_, configure, _):
+            build.build_board(
+                "bread-compact-wifi-lcd",
+                name_filter="bread-compact-wifi-lcd-gc9a01",
+                language="zh-CN",
+                idf_version=(6, 1, 0),
+            )
+            fragment = configure.call_args.args[1]
+            self.assertIn("CONFIG_USE_CUSTOM_WAKE_WORD=y", fragment)
+            self.assertIn("CONFIG_USE_AFE_WAKE_WORD=n", fragment)
+            self.assertNotIn("CONFIG_USE_AFE_WAKE_WORD=y", fragment)
+            self.assertIn("CONFIG_USE_ESP_WAKE_WORD=n", fragment)
+            self.assertIn("CONFIG_SR_MN_CN_MULTINET7_QUANT=y", fragment)
+            self.assertIn("CONFIG_SR_MN_EN_NONE=y", fragment)
+            self.assertNotIn("CONFIG_SR_MN_EN_MULTINET7_QUANT=y", fragment)
+            self.assertFalse(any(
+                item.startswith("CONFIG_SR_WN_") and item.endswith("=y")
+                for item in fragment
+            ))
+            self.assertIn('CONFIG_CUSTOM_WAKE_WORD="ni hao te ji"', fragment)
+            self.assertIn('CONFIG_CUSTOM_WAKE_WORD_DISPLAY="你好Taky"', fragment)
+            self.assertIn("CONFIG_CUSTOM_WAKE_WORD_THRESHOLD=20", fragment)
+            self.assertIn(
+                'CONFIG_OTA_URL="http://192.168.31.73:8003/xiaozhi/ota/"',
+                fragment,
+            )
+            self.assertIn("CONFIG_LV_USE_CANVAS=y", fragment)
+            self.assertIn("CONFIG_LCD_GC9A01_240X240=y", fragment)
+
+            build.build_board(
+                "bread-compact-wifi-lcd",
+                name_filter="bread-compact-wifi-lcd",
+                language="zh-CN",
+                idf_version=(6, 1, 0),
+            )
+            other = configure.call_args.args[1]
+            self.assertIn("CONFIG_USE_AFE_WAKE_WORD=y", other)
+            self.assertIn("CONFIG_SR_WN_WN9_NIHAOXIAOZHI_TTS=y", other)
+            self.assertIn("CONFIG_USE_CUSTOM_WAKE_WORD=n", other)
+            self.assertNotIn("CONFIG_SR_MN_CN_MULTINET7_QUANT=y", other)
+            self.assertFalse(any(item.startswith("CONFIG_OTA_URL=") for item in other))
+
+            build.build_board(
+                "bread-compact-wifi-lcd",
+                name_filter="bread-compact-wifi-lcd-gc9a01",
+                language="zh-CN",
+                wake_word="nihaoxiaozhi",
+                idf_version=(6, 1, 0),
+            )
+            override = configure.call_args.args[1]
+            self.assertIn("CONFIG_USE_AFE_WAKE_WORD=y", override)
+            self.assertIn("CONFIG_SR_WN_WN9_NIHAOXIAOZHI_TTS=y", override)
+            self.assertIn("CONFIG_USE_CUSTOM_WAKE_WORD=n", override)
+
     def test_all_variants_default_to_english_and_accept_every_language(self):
         with contextlib.redirect_stderr(io.StringIO()):
             variants = build._collect_variants(idf_version=(6, 1, 0))
@@ -1500,7 +1567,23 @@ class LanguageBuildTests(unittest.TestCase):
                         )
                         validate.assert_any_call([expected.split("=", 1)[0]], "--language")
                         models = [item for item in fragment if item.startswith("CONFIG_SR_WN_")]
-                        if variant["wake_word_supported"]:
+                        if variant["name"] == "bread-compact-wifi-lcd-gc9a01":
+                            self.assertEqual(models, [])
+                            self.assertIn("CONFIG_USE_CUSTOM_WAKE_WORD=y", fragment)
+                            self.assertIn("CONFIG_USE_AFE_WAKE_WORD=n", fragment)
+                            self.assertNotIn("CONFIG_USE_AFE_WAKE_WORD=y", fragment)
+                            self.assertIn("CONFIG_SR_MN_CN_MULTINET7_QUANT=y", fragment)
+                            self.assertIn("CONFIG_SR_MN_EN_NONE=y", fragment)
+                            self.assertNotIn("CONFIG_SR_MN_EN_MULTINET7_QUANT=y", fragment)
+                            validate.assert_any_call(
+                                [
+                                    "CONFIG_USE_CUSTOM_WAKE_WORD",
+                                    "CONFIG_SR_MN_CN_MULTINET7_QUANT",
+                                    "CONFIG_SR_MN_EN_NONE",
+                                ],
+                                "--wake-word",
+                            )
+                        elif variant["wake_word_supported"]:
                             chinese = language in {"zh-CN", "zh-TW"}
                             if target in {"esp32c3", "esp32c5", "esp32c6"}:
                                 model = "WN9S_NIHAOXIAOZHI" if chinese else "WN9S_HIESP"

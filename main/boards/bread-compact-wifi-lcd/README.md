@@ -40,9 +40,29 @@ Xiaozhi Assistant
 
 然后 `idf.py build`。选中 GC9A01 后，这块板会用 RoboEyes 脸，不再铺官方表情图。LVGL 的 Canvas 需要开着（`CONFIG_LV_USE_CANVAS`，组件默认就是开的；上面的变体也会写上这一项）。
 
-不需要为这张脸生成或烧录 assets。眼睛是运行时画出来的，不要拿 EchoEar / Otto 的 emoji 或 GIF 包当主脸。如果服务器之后下发 assets 下载地址，固件仍会按原逻辑收字体等资源，但这张脸不读那些表情。
+眼睛仍是运行时画出来的，不要拿 EchoEar / Otto 的 emoji 或 GIF 包当主脸。唤醒模型不在脸的画布里：这一变体默认把中文 MultiNet7 打进 assets 分区，所以要保留 `CONFIG_FLASH_DEFAULT_ASSETS=y`（非 Emote 风格的默认值就是 y），并把生成的 assets 一起烧录。界面语言仍用 `--language`，不写进板级配置；中文界面是 `--language zh-CN`。
 
 显示风格保持工程默认（Default message style）。微信气泡样式的字幕会被眼睛画布挡住。
+
+## 唤醒词（只这一变体）
+
+`bread-compact-wifi-lcd`（ST7789）仍走原来的 WakeNet，默认中文是「你好小智」。只有 `bread-compact-wifi-lcd-gc9a01` 改成离线自定义唤醒：`CONFIG_USE_CUSTOM_WAKE_WORD=y`，`CONFIG_USE_AFE_WAKE_WORD` 关闭，中文模型 `CONFIG_SR_MN_CN_MULTINET7_QUANT`（`mn7_cn`）。不打开英文 MultiNet。
+
+命令词不能中英混写，也不能把英文字母写进 `command`。Taky 用近音「特基」（`te ji`），「hi」用「嗨」（`hai`）。这是 MultiNet7 `vocab` 里的标准音节；`tei` 不在词表里。三条都会 `action=wake`，阈值是设备端 `0.2`（Kconfig 的 20），`duration` 仍是 3000 ms：
+
+| 说法 | command | 屏幕 / 上报文本 |
+| --- | --- | --- |
+| 你好 Taky | `ni hao te ji` | 你好Taky |
+| hi Taky / hi taky | `hai te ji` | hi Taky |
+| 你好小智（第一次拼音不稳时的回退） | `ni hao xiao zhi` | 你好小智 |
+
+Kconfig 只有一条 `CUSTOM_WAKE_WORD`，写的是第一条，给没有 assets 模型表时的回退。设备从 assets 启动时，`CustomWakeWord::Initialize` 只读 `index.json` 的 `multinet_model.commands`。这三条在 `gc9a01_wake_commands.json`，由 `scripts/build_default_assets.py --wake_commands` 写进 `index.json`。CMake 只在「面包板 Wi-Fi + LCD」并且 LCD 是 GC9A01 时传入这个文件，其它板型仍是原来的单词。
+
+启动提示走 `GetWakeWords()`，三条显示文本都会列出来，中文界面是：说「你好Taky / hi Taky / 你好小智」就能唤醒我。
+
+分区表仍是 `partitions/v2/16m.csv`：`ota_0` 在 `0x20000`、大小 `0x3f0000`，`assets` 在 `0x800000`、大小 8 MiB（8388608 字节）。不要改用 `16m_custom_wakeword.csv`。用 ESP-SR 2.4.7 打出来的 `srmodels.bin` 是 2681351 字节：`mn7_cn` 四个文件（`_MODEL_INFO_`、`vocab`、`mn7_index`、`mn7_data`）加上 MultiNet7 会一起拷贝的 `fst` 目录（`commands_cn.txt` 7298 字节、`commands_en.txt` 2350 字节）。`fst` 里的英文命令文本不是 `mn7_en` 声学模型，sdkconfig 里英文模型保持 `CONFIG_SR_MN_EN_NONE=y`。只有模型时的 `assets.bin` 是 2682075 字节。再加上这块板原来的 `font_noto_sans_common_16_4.bin`（885948 字节）和 21 张 32px 表情（34366 字节），大约 3602389 字节，低于 8 MiB。
+
+显式 `--wake-word nihaoxiaozhi` 或 `hiesp` 仍可临时改回 WakeNet。不传这个参数时，本变体固定是上面的自定义唤醒。
 
 产物在 `build/`。本仓库的构建说明到此为止，不要在没有确认 bootloader 的情况下把镜像写进 XMC 闪存的板子。
 
