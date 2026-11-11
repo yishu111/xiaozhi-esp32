@@ -16,9 +16,9 @@ enum RoboEyesMood {
 
 // How the gaze behaves between emotion changes.
 enum RoboEyesAttention {
-    kRoboEyesWander = 0,  // Idle saccades (blink + look around).
-    kRoboEyesCenter,      // Listening / connecting: settle in the middle.
-    kRoboEyesSpeak,       // Speaking: small bounce, hold the current mood.
+    kRoboEyesWander = 0,  // Idle and listening: both eyes saccade together.
+    kRoboEyesCenter,      // Connecting: settle in the middle.
+    kRoboEyesSpeak,       // Speaking: milder saccades, plus a small bounce.
     kRoboEyesThink,       // Thinking / confused: look up.
 };
 

@@ -285,7 +285,9 @@ void BeginMove(RoboEyesFace* face, float to_x, float to_y, int duration_ms) {
 }
 
 void PickWanderTarget(RoboEyesFace* face) {
-    if ((NextRand(face) % 5u) == 0u) {
+    // Idle / listening sometimes returns to center, the way the reference loop does.
+    // Speaking keeps moving so a long reply does not sit still.
+    if (face->attention != kRoboEyesSpeak && (NextRand(face) % 5u) == 0u) {
         BeginMove(face, 0.0f, 0.0f, 260);
         return;
     }
@@ -293,6 +295,12 @@ void PickWanderTarget(RoboEyesFace* face) {
     float x_hi = 36.0f;
     float y_lo = -34.0f;
     float y_hi = 74.0f;
+    if (face->attention == kRoboEyesSpeak) {
+        x_lo = -22.0f;
+        x_hi = 26.0f;
+        y_lo = -20.0f;
+        y_hi = 36.0f;
+    }
     if (face->mood == kRoboEyesAngry) {
         x_lo = -16.0f;
         x_hi = 16.0f;
@@ -316,10 +324,10 @@ void PickWanderTarget(RoboEyesFace* face) {
 }
 
 bool AllowsWander(const RoboEyesFace* face) {
-    if (face->attention != kRoboEyesWander) {
-        return false;
-    }
-    return face->mood != kRoboEyesHappy && face->mood != kRoboEyesSurprised;
+    // Listening uses the same attention as idle. Speaking still glances, just less far.
+    // Happy and surprised keep their eye shape, but they no longer pin the gaze:
+    // a conversation is almost entirely listening or speaking.
+    return face->attention == kRoboEyesWander || face->attention == kRoboEyesSpeak;
 }
 
 void AdvanceGaze(RoboEyesFace* face, uint32_t dt) {
@@ -387,10 +395,6 @@ void RoboEyesSetMood(RoboEyesFace* face, RoboEyesMood mood) {
     if (face->mood != mood) {
         face->mood = mood;
         face->wink_eye = 0;
-        if (face->attention == kRoboEyesWander) {
-            face->gaze_mode = 0;
-            face->gaze_hold_ms = 350;
-        }
     }
 }
 
@@ -398,10 +402,14 @@ void RoboEyesSetAttention(RoboEyesFace* face, RoboEyesAttention attention) {
     if (face->attention == attention) {
         return;
     }
+    bool was_looking = face->attention == kRoboEyesWander || face->attention == kRoboEyesSpeak;
     face->attention = attention;
-    if (attention == kRoboEyesWander) {
+    bool will_look = attention == kRoboEyesWander || attention == kRoboEyesSpeak;
+    // Leaving a locked pose (connecting / thinking) must not inherit its long hold,
+    // or the first saccade waits until that timer expires.
+    if (will_look && !was_looking) {
         face->gaze_mode = 0;
-        face->gaze_hold_ms = 400;
+        face->gaze_hold_ms = 200;
     }
 }
 
@@ -490,43 +498,68 @@ static RoboEyesMood ParseMood(const char* name) {
     return kRoboEyesIdle;
 }
 
+struct GazeSpan {
+    float x;
+    float y;
+    float min_open;
+    int blinks;
+};
+
+GazeSpan MeasureGaze(RoboEyesAttention attention, RoboEyesMood mood, int duration_ms) {
+    RoboEyesFace face;
+    RoboEyesInit(&face, 1);
+    RoboEyesSetMood(&face, mood);
+    RoboEyesSetAttention(&face, attention);
+    GazeSpan span = {0.0f, 0.0f, 1.0f, 0};
+    float min_x = 0.0f;
+    float max_x = 0.0f;
+    float min_y = 0.0f;
+    float max_y = 0.0f;
+    int prev_blink = -1;
+    for (int t = 0; t < duration_ms; t += 66) {
+        RoboEyesTick(&face, 66);
+        if (face.gaze_x < min_x) {
+            min_x = face.gaze_x;
+        }
+        if (face.gaze_x > max_x) {
+            max_x = face.gaze_x;
+        }
+        if (face.gaze_y < min_y) {
+            min_y = face.gaze_y;
+        }
+        if (face.gaze_y > max_y) {
+            max_y = face.gaze_y;
+        }
+        if (face.open_l < span.min_open) {
+            span.min_open = face.open_l;
+        }
+        if (face.blink_t_ms >= 0 && prev_blink < 0) {
+            span.blinks++;
+        }
+        prev_blink = face.blink_t_ms;
+    }
+    span.x = max_x - min_x;
+    span.y = max_y - min_y;
+    return span;
+}
+
 int main(int argc, char** argv) {
     const char* mood_name = argc > 1 ? argv[1] : "idle";
     if (strcmp(mood_name, "ticks") == 0) {
-        RoboEyesFace face;
-        RoboEyesInit(&face, 1);
-        int blinks = 0;
-        int prev_blink = -1;
-        float min_x = 0.0f;
-        float max_x = 0.0f;
-        float min_y = 0.0f;
-        float max_y = 0.0f;
-        float min_open = 1.0f;
-        for (int t = 0; t < 12000; t += 66) {
-            RoboEyesTick(&face, 66);
-            if (face.gaze_x < min_x) {
-                min_x = face.gaze_x;
-            }
-            if (face.gaze_x > max_x) {
-                max_x = face.gaze_x;
-            }
-            if (face.gaze_y < min_y) {
-                min_y = face.gaze_y;
-            }
-            if (face.gaze_y > max_y) {
-                max_y = face.gaze_y;
-            }
-            if (face.open_l < min_open) {
-                min_open = face.open_l;
-            }
-            if (face.blink_t_ms >= 0 && prev_blink < 0) {
-                blinks++;
-            }
-            prev_blink = face.blink_t_ms;
-        }
-        printf("blinks=%d min_open=%.3f gaze_x=%.1f..%.1f gaze_y=%.1f..%.1f\n", blinks, min_open,
-               min_x, max_x, min_y, max_y);
-        return (blinks >= 2 && min_open < 0.1f && (max_x - min_x) > 10.0f) ? 0 : 1;
+        // Listening uses the same attention as idle. Both must travel.
+        GazeSpan idle = MeasureGaze(kRoboEyesWander, kRoboEyesIdle, 8000);
+        GazeSpan listen = MeasureGaze(kRoboEyesWander, kRoboEyesIdle, 8000);
+        GazeSpan speaking = MeasureGaze(kRoboEyesSpeak, kRoboEyesHappy, 8000);
+        GazeSpan center = MeasureGaze(kRoboEyesCenter, kRoboEyesIdle, 4000);
+        printf(
+            "idle_span=%.1f,%.1f listen_span=%.1f,%.1f speak_span=%.1f,%.1f "
+            "center_span=%.1f,%.1f blinks=%d min_open=%.3f\n",
+            idle.x, idle.y, listen.x, listen.y, speaking.x, speaking.y, center.x, center.y,
+            idle.blinks, idle.min_open);
+        bool ok = idle.blinks >= 2 && idle.min_open < 0.1f && idle.x > 40.0f && idle.y > 40.0f &&
+                  listen.x > 40.0f && listen.y > 40.0f && speaking.x > 20.0f &&
+                  speaking.y > 20.0f && center.x < 2.0f && center.y < 2.0f;
+        return ok ? 0 : 1;
     }
     float open = argc > 2 ? static_cast<float>(atof(argv[2])) : 1.0f;
     float gaze_x = argc > 3 ? static_cast<float>(atof(argv[3])) : 0.0f;

@@ -76,16 +76,16 @@ else if (mfid == 0x70) {
 ## 屏幕上会看到什么
 
 - 黑底、两只青色眼睛（约 `#78E6FF`），直径约 69 像素，位置按 240×240 参考图对齐。
-- 待机（`SetEmotion("neutral")`，以及未单独映射的名字）：大约每 1.6–3.4 秒眨一次，闭合曲线按参考预览的 80 ms 步进；眨完会在圆屏里看向新的方向，大约 0.4–1.2 秒换一次。
+- 待机和聆听（`SetStatus` 为待命或聆听，情绪是 `neutral` 或其他未单独锁定目光的名字）：大约每 1.6–3.4 秒眨一次；两只眼睛一起在圆屏里换方向，幅度与参考 GIF 同级（大约几十像素），一次扫视大约 280 ms，停 0.4–1.2 秒再换。自动对话几乎一直停在聆听，所以张望发生在聆听，而不只是长时间待命。
 - `SetEmotion` 映射：
-  - `happy` / `laughing` / `laugh` / `funny` / `loving` / `kissy` / `delicious` / `confident` / `cool` / `relaxed` / `embarrassed`：向上的月牙，并带小幅上下晃动。
+  - `happy` / `laughing` / `laugh` / `funny` / `loving` / `kissy` / `delicious` / `confident` / `cool` / `relaxed` / `embarrassed`：向上的月牙，并带小幅上下晃动。聆听时仍然四处看。
   - `winking`：同样的月牙，左眼眨一次。
   - `angry`：内角下压的眼皮，小范围张望。
   - `sad` / `crying` / `sleepy` / `tired` / `silly`：上眼皮压低的困倦眼，目光偏下。省电模式会调用 `sleepy`。
-  - `surprised` / `shocked`：更大的圆眼，停在中间。
-  - `thinking` / `confused`：圆眼看向上方。
+  - `surprised` / `shocked`：更大的圆眼，仍会跟着当前状态张望。
+  - `thinking` / `confused`：圆眼看向上方，暂停扫视。
   - `neutral` / `robot_2` 以及其他名字：回到待机眼。只要名字非空就会接受（返回 true），因为这块屏没有表情图可回退。
-- 聆听、连接中：眼睛回到中间，仍会眨眼。说话：在当前表情上加一点上下跳动。回到待命后再继续四处看。
+- 说话：幅度收小的扫视，再加一点上下跳动，避免长答复时钉在正中。连接中短暂回到中间。
 - 刷新定时器是 66 ms（大约 15 fps）。每帧重画整块 240×240 画布，再经 SPI 送出，实际帧率多半落在 12–20 fps，由 GC9A01 的整帧刷新决定。
 - 「待命 / 聆听 / 说话」和闲置时钟不画在脸上。配网、激活码、错误、升级这些 `SetStatus` / 聊天子幕仍显示在圆屏内侧。
 

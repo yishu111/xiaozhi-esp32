@@ -44,12 +44,13 @@ bool StatusTextVisible(const char* status) {
 }
 
 RoboEyesAttention AttentionFromStatus(const char* status) {
-    if (std::strcmp(status, Lang::Strings::LISTENING) == 0 ||
-        std::strcmp(status, Lang::Strings::CONNECTING) == 0) {
-        return kRoboEyesCenter;
-    }
+    // Auto-listen keeps the device in LISTENING for most of a conversation.
+    // That has to keep the idle saccade, or the eyes only blink.
     if (std::strcmp(status, Lang::Strings::SPEAKING) == 0) {
         return kRoboEyesSpeak;
+    }
+    if (std::strcmp(status, Lang::Strings::CONNECTING) == 0) {
+        return kRoboEyesCenter;
     }
     return kRoboEyesWander;
 }
