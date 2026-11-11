@@ -1,0 +1,25 @@
+RoboEyes-style face on bread-compact-wifi-lcd (GC9A01)
+=========================================================
+
+The GC9A01 build of this board draws a two-eye face on the single 240x240
+round panel. That face is an original RGB565 renderer written for this
+repository (`roboeyes_face.cc` / `roboeyes_display.cc`). It is not a copy or
+mechanical translation of FluxGarage/RoboEyes, and this tree does not vendor
+that project's source or the Adafruit GFX library it depends on.
+
+The on-screen look — two cyan eyes on a black round screen, a fast blink,
+idle glances, and simple happy / angry / tired shapes — is inspired by
+FluxGarage RoboEyes:
+
+  https://github.com/FluxGarage/RoboEyes
+  Copyright (c) FluxGarage
+  SPDX-License-Identifier: GPL-3.0-only
+
+RoboEyes is GPL-3.0-only. Adafruit GFX, which RoboEyes builds on, is
+BSD-3-Clause. Because those sources are not linked into this firmware, the
+rest of this repository stays under the MIT license in the top-level LICENSE
+file. Do not drop the original RoboEyes sources into this tree without
+treating the combined work as GPL-3.0.
+
+No Anki, Cozmo, or other non-free face assets are included. The eyes are
+drawn at runtime. No emoji pack is required for the face.
