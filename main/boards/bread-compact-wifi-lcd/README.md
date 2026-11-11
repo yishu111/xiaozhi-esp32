@@ -48,17 +48,21 @@ Xiaozhi Assistant
 
 `bread-compact-wifi-lcd`（ST7789）仍走原来的 WakeNet，默认中文是「你好小智」。只有 `bread-compact-wifi-lcd-gc9a01` 改成离线自定义唤醒：`CONFIG_USE_CUSTOM_WAKE_WORD=y`，`CONFIG_USE_AFE_WAKE_WORD` 关闭，中文模型 `CONFIG_SR_MN_CN_MULTINET7_QUANT`（`mn7_cn`）。不打开英文 MultiNet。
 
-命令词不能中英混写，也不能把英文字母写进 `command`。Taky 用近音「特基」（`te ji`），「hi」用「嗨」（`hai`）。这是 MultiNet7 `vocab` 里的标准音节；`tei` 不在词表里。三条都会 `action=wake`，阈值是设备端 `0.2`（Kconfig 的 20），`duration` 仍是 3000 ms：
+命令词不能中英混写，也不能把英文字母写进 `command`。用户实际发音是 ˈteɪki（tay-kee）。`tei` 和 `ki` 都不在 MultiNet7 `vocab` 里。主读音改成更贴这个音的「泰奇」：`tai`（/tʰai/）比 `te`（/tɤ/，特）更接近 teɪ，`qi`（/tɕʰi/）是词表里最接近 /ki/ 的音节。「hi」仍用「嗨」（`hai`）。`te ji`（特基）偶尔能过门槛，所以留作别名，不再当主读音。七条都是 `action=wake`，阈值仍是设备端 `0.2`（Kconfig 的 20），`duration` 仍是 3000 ms。顺序就是识别优先级，不要打乱：
 
-| 说法 | command | 屏幕 / 上报文本 |
-| --- | --- | --- |
-| 你好 Taky | `ni hao te ji` | 你好Taky |
-| hi Taky / hi taky | `hai te ji` | hi Taky |
-| 你好小智（第一次拼音不稳时的回退） | `ni hao xiao zhi` | 你好小智 |
+| 顺序 | 说法 | command | 屏幕 / 上报文本 |
+| --- | --- | --- | --- |
+| 1（主读音） | 你好 Taky | `ni hao tai qi` | 你好Taky |
+| 2 | hi Taky / hi taky | `hai tai qi` | hi Taky |
+| 3 | 近音 | `ni hao te qi` | 你好Taky |
+| 4 | 近音 | `hai te qi` | hi Taky |
+| 5 | 已能偶尔唤醒，保留 | `ni hao te ji` | 你好Taky |
+| 6 | 近音 | `hai te ji` | hi Taky |
+| 7 | 你好小智（回退） | `ni hao xiao zhi` | 你好小智 |
 
-Kconfig 只有一条 `CUSTOM_WAKE_WORD`，写的是第一条，给没有 assets 模型表时的回退。设备从 assets 启动时，`CustomWakeWord::Initialize` 只读 `index.json` 的 `multinet_model.commands`。这三条在 `gc9a01_wake_commands.json`，由 `scripts/build_default_assets.py --wake_commands` 写进 `index.json`。CMake 只在「面包板 Wi-Fi + LCD」并且 LCD 是 GC9A01 时传入这个文件，其它板型仍是原来的单词。
+Kconfig 只有一条 `CUSTOM_WAKE_WORD`，写的是第一条 `ni hao tai qi` / 你好Taky，给没有 assets 模型表时的回退。设备从 assets 启动时，`CustomWakeWord::Initialize` 只读 `index.json` 的 `multinet_model.commands`。这七条在 `gc9a01_wake_commands.json`，由 `scripts/build_default_assets.py --wake_commands` 写进 `index.json`。CMake 只在「面包板 Wi-Fi + LCD」并且 LCD 是 GC9A01 时传入这个文件，其它板型仍是原来的单词。
 
-启动提示走 `GetWakeWords()`，三条显示文本都会列出来，中文界面是：说「你好Taky / hi Taky / 你好小智」就能唤醒我。
+启动提示走 `GetWakeWords()`，相同显示文本会去重。别名可以共用「你好Taky」和「hi Taky」。中文界面仍是：说「你好Taky / hi Taky / 你好小智」就能唤醒我。
 
 分区表仍是 `partitions/v2/16m.csv`：`ota_0` 在 `0x20000`、大小 `0x3f0000`，`assets` 在 `0x800000`、大小 8 MiB（8388608 字节）。不要改用 `16m_custom_wakeword.csv`。用 ESP-SR 2.4.7 打出来的 `srmodels.bin` 是 2681351 字节：`mn7_cn` 四个文件（`_MODEL_INFO_`、`vocab`、`mn7_index`、`mn7_data`）加上 MultiNet7 会一起拷贝的 `fst` 目录（`commands_cn.txt` 7298 字节、`commands_en.txt` 2350 字节）。`fst` 里的英文命令文本不是 `mn7_en` 声学模型，sdkconfig 里英文模型保持 `CONFIG_SR_MN_EN_NONE=y`。只有模型时的 `assets.bin` 是 2682075 字节。再加上这块板原来的 `font_noto_sans_common_16_4.bin`（885948 字节）和 21 张 32px 表情（34366 字节），大约 3602389 字节，低于 8 MiB。
 

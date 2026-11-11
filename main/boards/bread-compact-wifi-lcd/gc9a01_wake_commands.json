@@ -4,6 +4,26 @@
     "threshold": 0.2,
     "commands": [
         {
+            "command": "ni hao tai qi",
+            "text": "你好Taky",
+            "action": "wake"
+        },
+        {
+            "command": "hai tai qi",
+            "text": "hi Taky",
+            "action": "wake"
+        },
+        {
+            "command": "ni hao te qi",
+            "text": "你好Taky",
+            "action": "wake"
+        },
+        {
+            "command": "hai te qi",
+            "text": "hi Taky",
+            "action": "wake"
+        },
+        {
             "command": "ni hao te ji",
             "text": "你好Taky",
             "action": "wake"

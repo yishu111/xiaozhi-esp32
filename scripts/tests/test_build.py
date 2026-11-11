@@ -1474,8 +1474,20 @@ class LanguageBuildTests(unittest.TestCase):
             .read_text(encoding="utf-8")
         )
         self.assertEqual(
+            [item["command"] for item in commands["commands"]],
+            [
+                "ni hao tai qi",
+                "hai tai qi",
+                "ni hao te qi",
+                "hai te qi",
+                "ni hao te ji",
+                "hai te ji",
+                "ni hao xiao zhi",
+            ],
+        )
+        self.assertEqual(
             [item["text"] for item in commands["commands"]],
-            ["你好Taky", "hi Taky", "你好小智"],
+            ["你好Taky", "hi Taky", "你好Taky", "hi Taky", "你好Taky", "hi Taky", "你好小智"],
         )
         with self.mock_idf() as (_, configure, _):
             build.build_board(
@@ -1496,7 +1508,7 @@ class LanguageBuildTests(unittest.TestCase):
                 item.startswith("CONFIG_SR_WN_") and item.endswith("=y")
                 for item in fragment
             ))
-            self.assertIn('CONFIG_CUSTOM_WAKE_WORD="ni hao te ji"', fragment)
+            self.assertIn('CONFIG_CUSTOM_WAKE_WORD="ni hao tai qi"', fragment)
             self.assertIn('CONFIG_CUSTOM_WAKE_WORD_DISPLAY="你好Taky"', fragment)
             self.assertIn("CONFIG_CUSTOM_WAKE_WORD_THRESHOLD=20", fragment)
             self.assertIn(

@@ -332,7 +332,7 @@ class WakeCommandAssetsTest(unittest.TestCase):
             self.assertEqual(index["multinet_model"]["threshold"], 0.2)
             self.assertEqual(index["multinet_model"]["duration"], 3000)
 
-    def test_gc9a01_file_replaces_the_single_phrase_with_three_commands(self):
+    def test_gc9a01_file_replaces_the_single_phrase_with_its_command_list(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             self.fake_models(root, ["mn7_cn", "fst"])
@@ -354,6 +354,18 @@ class WakeCommandAssetsTest(unittest.TestCase):
             for command in index["multinet_model"]["commands"]:
                 if command["action"] == "wake" and command["text"] not in words:
                     words.append(command["text"])
+            self.assertEqual(
+                [item["command"] for item in index["multinet_model"]["commands"]],
+                [
+                    "ni hao tai qi",
+                    "hai tai qi",
+                    "ni hao te qi",
+                    "hai te qi",
+                    "ni hao te ji",
+                    "hai te ji",
+                    "ni hao xiao zhi",
+                ],
+            )
             self.assertEqual(words, ["你好Taky", "hi Taky", "你好小智"])
             models = files["srmodels.bin"][0]
             self.assertEqual(struct.unpack_from("<I", models)[0], 2)
@@ -390,15 +402,21 @@ class WakeCommandAssetsTest(unittest.TestCase):
 
     def test_gc9a01_commands_stay_inside_the_multinet_syllables(self):
         spec = json.loads(self.COMMANDS.read_text(encoding="utf-8"))
-        allowed = {"ni", "hao", "te", "ji", "hai", "xiao", "zhi"}
+        allowed = {"ni", "hao", "tai", "qi", "te", "ji", "hai", "xiao", "zhi"}
         tokens = []
         for item in spec["commands"]:
             tokens.extend(item["command"].split(" "))
-        self.assertTrue(tokens)
+        self.assertEqual(tokens[:2], ["ni", "hao"])
+        self.assertIn("tai", tokens)
+        self.assertIn("qi", tokens)
         self.assertTrue(set(tokens) <= allowed)
         self.assertNotIn("tei", tokens)
+        self.assertNotIn("ki", tokens)
         self.assertNotIn("ta", tokens)
         self.assertNotIn("ke", tokens)
+        self.assertEqual(spec["commands"][0]["command"], "ni hao tai qi")
+        self.assertEqual(spec["threshold"], 0.2)
+        self.assertEqual(spec["duration"], 3000)
 
     def test_rejected_command_strings(self):
         with tempfile.TemporaryDirectory() as directory:
