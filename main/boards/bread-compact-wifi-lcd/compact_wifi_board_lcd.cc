@@ -5,6 +5,9 @@
 #include "application.h"
 #include "button.h"
 #include "config.h"
+#if defined(LCD_TYPE_GC9A01_SERIAL)
+#include "roboeyes_display.h"
+#endif
 #include "mcp_server.h"
 #include "lamp_controller.h"
 #include "led/single_led.h"
@@ -117,9 +120,13 @@ private:
         esp_lcd_panel_mirror(panel, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y);
 #ifdef  LCD_TYPE_GC9A01_SERIAL
         panel_config.vendor_config = &gc9107_vendor_config;
-#endif
+        display_ = new RoboEyesLcdDisplay(panel_io, panel, DISPLAY_WIDTH, DISPLAY_HEIGHT,
+                                          DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X,
+                                          DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY);
+#else
         display_ = new SpiLcdDisplay(panel_io, panel,
                                     DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY);
+#endif
     }
 
     void InitializeButtons() {
