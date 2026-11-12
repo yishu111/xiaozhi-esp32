@@ -1,42 +1,19 @@
 {
-    "language": "cn",
+    "language": "en",
     "duration": 3000,
     "threshold": 0.2,
     "commands": [
         {
-            "command": "ni hao tai qi",
-            "text": "你好Taky",
-            "action": "wake"
-        },
-        {
-            "command": "hai tai qi",
+            "command": "hi taky",
             "text": "hi Taky",
-            "action": "wake"
+            "action": "wake",
+            "phonemes": "hi TdKm"
         },
         {
-            "command": "ni hao te qi",
-            "text": "你好Taky",
-            "action": "wake"
-        },
-        {
-            "command": "hai te qi",
+            "command": "hey taky",
             "text": "hi Taky",
-            "action": "wake"
-        },
-        {
-            "command": "ni hao te ji",
-            "text": "你好Taky",
-            "action": "wake"
-        },
-        {
-            "command": "hai te ji",
-            "text": "hi Taky",
-            "action": "wake"
-        },
-        {
-            "command": "ni hao xiao zhi",
-            "text": "你好小智",
-            "action": "wake"
+            "action": "wake",
+            "phonemes": "hd TdKm"
         }
     ]
 }

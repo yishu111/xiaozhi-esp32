@@ -3,6 +3,9 @@
 #include "system_info.h"
 #include "assets.h"
 
+#include <algorithm>
+
+#include <esp_err.h>
 #include <esp_log.h>
 #include <esp_mn_iface.h>
 #include <esp_mn_models.h>
@@ -16,6 +19,11 @@ CustomWakeWord::CustomWakeWord()
 }
 
 CustomWakeWord::~CustomWakeWord() {
+    if (commands_allocated_) {
+        esp_mn_commands_free();
+        commands_allocated_ = false;
+    }
+
     if (multinet_model_data_ != nullptr && multinet_ != nullptr) {
         multinet_->destroy(multinet_model_data_);
         multinet_model_data_ = nullptr;
@@ -70,9 +78,18 @@ void CustomWakeWord::ParseWakenetModelConfig() {
                     cJSON* command_name = cJSON_GetObjectItem(command, "command");
                     cJSON* text = cJSON_GetObjectItem(command, "text");
                     cJSON* action = cJSON_GetObjectItem(command, "action");
+                    cJSON* phonemes = cJSON_GetObjectItem(command, "phonemes");
                     if (cJSON_IsString(command_name) && cJSON_IsString(text) && cJSON_IsString(action)) {
-                        commands_.push_back({command_name->valuestring, text->valuestring, action->valuestring});
-                        ESP_LOGI(TAG, "Command: %s, Text: %s, Action: %s", command_name->valuestring, text->valuestring, action->valuestring);
+                        std::string phoneme_text;
+                        if (cJSON_IsString(phonemes) && phonemes->valuestring != nullptr &&
+                            phonemes->valuestring[0] != '\0') {
+                            phoneme_text = phonemes->valuestring;
+                        }
+                        commands_.push_back({command_name->valuestring, text->valuestring,
+                                             action->valuestring, phoneme_text});
+                        ESP_LOGI(TAG, "Command: %s, Text: %s, Action: %s, Phonemes: %s",
+                                 command_name->valuestring, text->valuestring, action->valuestring,
+                                 phoneme_text.empty() ? "-" : phoneme_text.c_str());
                     }
                 }
             }
@@ -120,11 +137,33 @@ bool CustomWakeWord::Initialize(AudioCodec* codec, srmodel_list_t* models_list) 
     multinet_model_data_ = multinet_->create(mn_name_, duration_);
     multinet_->set_det_threshold(multinet_model_data_, threshold_);
     input_buffer_.reserve(multinet_->get_samp_chunksize(multinet_model_data_));
-    esp_mn_commands_clear();
-    for (int i = 0; i < commands_.size(); i++) {
-        esp_mn_commands_add(i + 1, commands_[i].command.c_str());
+    // add/phoneme_add both refuse to run until the command list exists.
+    if (esp_mn_commands_alloc(multinet_, multinet_model_data_) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to allocate MultiNet command list");
+        return false;
     }
-    esp_mn_commands_update();
+    commands_allocated_ = true;
+    esp_mn_commands_clear();
+    for (size_t i = 0; i < commands_.size(); i++) {
+        const int command_id = static_cast<int>(i) + 1;
+        esp_err_t err = ESP_OK;
+        if (!commands_[i].phonemes.empty()) {
+            err = esp_mn_commands_phoneme_add(command_id, commands_[i].command.c_str(),
+                                              commands_[i].phonemes.c_str());
+        } else {
+            err = esp_mn_commands_add(command_id, commands_[i].command.c_str());
+        }
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to add wake command %d: %s", command_id,
+                     commands_[i].command.c_str());
+            return false;
+        }
+    }
+    esp_mn_error_t* errors = esp_mn_commands_update();
+    if (errors != nullptr) {
+        ESP_LOGE(TAG, "Failed to update MultiNet commands (%d)", errors->num);
+        return false;
+    }
     
     multinet_->print_active_speech_commands(multinet_model_data_);
 #if CONFIG_SEND_WAKE_WORD_DATA
@@ -145,7 +184,8 @@ std::vector<std::string> CustomWakeWord::GetWakeWords() const {
         return words;
     }
     for (const auto& command : commands_) {
-        if (command.action == "wake" && !command.text.empty()) {
+        if (command.action == "wake" && !command.text.empty() &&
+            std::find(words.begin(), words.end(), command.text) == words.end()) {
             words.push_back(command.text);
         }
     }

@@ -42,6 +42,8 @@ private:
         std::string command;
         std::string text;
         std::string action;
+        // ESP-SR English phoneme classes from multinet_g2p.py. Empty for Chinese pinyin.
+        std::string phonemes;
     };
 
     // multinet 相关成员变量
@@ -50,6 +52,7 @@ private:
     srmodel_list_t *models_ = nullptr;
     bool owns_models_ = false;
     char* mn_name_ = nullptr;
+    bool commands_allocated_ = false;
     std::string language_ = "cn";
     int duration_ = 3000;
     float threshold_ = 0.2;

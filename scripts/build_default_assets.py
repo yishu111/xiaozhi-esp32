@@ -608,12 +608,15 @@ def read_wakenet_from_sdkconfig(sdkconfig_path):
     models = []
     with io.open(sdkconfig_path, "r", encoding="utf-8") as f:
         for label in f:
-            label = label.strip("\n")
-            if 'CONFIG_SR_WN' in label and '#' not in label[0]:
+            label = label.strip()
+            if 'CONFIG_SR_WN' in label and not label.startswith('#'):
                 if '_NONE' in label:
                     continue
                 if '=' in label:
-                    label = label.split("=")[0]
+                    name, value = label.split('=', 1)
+                    if value.strip() != 'y':
+                        continue
+                    label = name
                 if '_MULTI' in label:
                     label = label[:-6]
                 model_name = label.split("_SR_WN_")[-1].lower()
@@ -634,8 +637,10 @@ def read_multinet_from_sdkconfig(sdkconfig_path):
     with io.open(sdkconfig_path, "r", encoding="utf-8") as f:
         models_string = ''
         for label in f:
-            label = label.strip("\n")
-            if 'CONFIG_SR_MN' in label and label[0] != '#':
+            label = label.strip()
+            # Only enabled models. A "=n" line still contains the symbol name,
+            # and packing that model would pull mn7_cn in next to mn7_en.
+            if label.startswith('CONFIG_SR_MN') and label.endswith('=y'):
                 models_string += label
 
     models = []
@@ -764,17 +769,31 @@ def read_custom_wake_word_from_sdkconfig(sdkconfig_path):
     return None
 
 
+# Single-character classes from esp-sr tool/multinet_g2p.py. A command must not
+# mix these with Chinese pinyin. HI /haɪ/ is HH AY1 -> "hi". TAKY /ˈteɪki/ is
+# T EY1 K IY1 -> "TdKm". Tacky /tæki/ would be T AE1 K IY1 -> "TaKm".
+_EN_PHONEME_CLASS = "aNbVcLFdSBReDfgGhKWiTMZjkPlmnYopqrstuvw"
+_EN_PHONEME_RE = re.compile(rf"[{_EN_PHONEME_CLASS}]+(?: [{_EN_PHONEME_CLASS}]+)*")
+_COMMAND_RE = re.compile(r"[a-z]+(?: [a-z]+)*")
+
+
 def load_wake_commands(path):
     """Load a variant command list. Other boards do not pass this file.
 
     ``threshold`` is the device value in (0, 1], the same number written into
     index.json. Kconfig stores that value as a percent (0.2 -> 20).
-    ``command`` is space-separated lowercase pinyin, never mixed English text.
+    ``language`` is ``cn`` (space-separated lowercase pinyin) or ``en``
+    (lowercase English words). English commands require ``phonemes`` from the
+    MultiNet7 alphabet. One command cannot mix the two languages.
     """
     with open(path, "r", encoding="utf-8") as handle:
         data = json.load(handle)
     if not isinstance(data, dict):
         raise ValueError(f"{path}: wake commands file must be a JSON object")
+
+    language = data.get("language", "cn")
+    if language not in ("cn", "en"):
+        raise ValueError(f"{path}: language must be cn or en, got {language!r}")
 
     commands = data.get("commands")
     if not isinstance(commands, list) or not commands:
@@ -787,24 +806,34 @@ def load_wake_commands(path):
         command = item.get("command")
         text = item.get("text")
         action = item.get("action")
-        if not isinstance(command, str) or re.fullmatch(r"[a-z]+(?: [a-z]+)*", command) is None:
+        if not isinstance(command, str) or _COMMAND_RE.fullmatch(command) is None:
+            kind = "lowercase English words" if language == "en" else "lowercase pinyin"
             raise ValueError(
                 f"{path}: commands[{index}].command must be space-separated "
-                f"lowercase pinyin, got {command!r}"
+                f"{kind}, got {command!r}"
             )
         if not isinstance(text, str) or not text.strip() or any(char in text for char in "\r\n"):
             raise ValueError(f"{path}: commands[{index}].text must be a single-line string")
         if action != "wake":
             raise ValueError(f"{path}: commands[{index}].action must be 'wake'")
-        normalized.append({
+        entry = {
             "command": command,
             "text": text,
             "action": "wake",
-        })
-
-    language = data.get("language", "cn")
-    if language != "cn":
-        raise ValueError(f"{path}: language must be cn, got {language!r}")
+        }
+        phonemes = item.get("phonemes")
+        if language == "en":
+            if not isinstance(phonemes, str) or _EN_PHONEME_RE.fullmatch(phonemes) is None:
+                raise ValueError(
+                    f"{path}: commands[{index}].phonemes must be ESP-SR English "
+                    f"phoneme classes, got {phonemes!r}"
+                )
+            entry["phonemes"] = phonemes
+        elif phonemes not in (None, ""):
+            raise ValueError(
+                f"{path}: commands[{index}].phonemes is only valid for language en"
+            )
+        normalized.append(entry)
 
     duration = data.get("duration", 3000)
     if isinstance(duration, bool) or not isinstance(duration, int) or duration <= 0:
@@ -1106,8 +1135,14 @@ def main():
     wakenet_model_paths = []
     multinet_model_paths = []
     
-    # 1. Only package wakenet models if USE_ESP_WAKE_WORD=y or USE_AFE_WAKE_WORD=y
-    if wake_word_config['use_esp_wake_word'] or wake_word_config['use_afe_wake_word']:
+    # 1. Package WakeNet for ESP/AFE wake, and also when a custom MultiNet board
+    # explicitly selects a WakeNet model. Otherwise MultiNet would drop 「你好小智」.
+    pack_wakenet = (
+        wake_word_config['use_esp_wake_word']
+        or wake_word_config['use_afe_wake_word']
+        or (wake_word_config['use_custom_wake_word'] and bool(wakenet_model_names))
+    )
+    if pack_wakenet:
         wakenet_model_paths = get_wakenet_model_paths(wakenet_model_names, args.esp_sr_model_path)
         if not wakenet_model_names or len(wakenet_model_paths) != len(wakenet_model_names):
             parser.error("Wake-word detection requires selected, available ESP-SR WakeNet models")

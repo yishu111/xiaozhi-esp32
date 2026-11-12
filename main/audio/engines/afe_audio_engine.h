@@ -48,10 +48,11 @@ public:
     const std::string& GetLastDetectedWakeWord() const override { return last_detected_wake_word_; }
 
 private:
-    enum class WakeDetector {
-        kNone,
-        kWakeNet,
-        kMultiNet,
+    // Bits, not a choice. MultiNet and WakeNet both run when both models are packed.
+    enum WakeDetector : uint8_t {
+        kNone = 0,
+        kWakeNet = 1 << 0,
+        kMultiNet = 1 << 1,
     };
 
     static constexpr EventBits_t kWakeWordEnabled = 1 << 0;
@@ -81,6 +82,8 @@ private:
     // uses it to reject a fetch result produced before a disable/re-enable cycle.
     std::atomic<uint32_t> control_generation_{0};
     WakeDetector wake_detector_ = WakeDetector::kNone;
+    // Which detector produced the wake that EncodeWakeWordData / GetWakeWordOpus must serve.
+    WakeDetector last_wake_source_ = WakeDetector::kNone;
 
     std::unique_ptr<CustomWakeWord> custom_wake_word_;
     std::vector<std::string> wake_words_;
@@ -109,6 +112,8 @@ private:
     void OutputRawAudio(const std::vector<int16_t>& data);
     void HandleWakeWordResult(const afe_fetch_result_t* result);
     void HandleVoiceResult(const afe_fetch_result_t* result);
+    bool HasDetector(WakeDetector flag) const;
+    bool WakeWordCameFromMultiNet() const;
 };
 
 #endif
