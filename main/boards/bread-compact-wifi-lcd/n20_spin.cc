@@ -16,8 +16,21 @@
 #include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <hal/gpio_types.h>
 
 #include "config.h"
+
+#if !defined(CONFIG_LCD_GC9A01_240X240)
+
+void InitializeN20Spin() {}
+
+#else
+
+// ESP-IDF hal/gpio_types.h GPIO_IS_VALID_OUTPUT_GPIO, backed by SOC_GPIO_VALID_OUTPUT_GPIO_MASK.
+static_assert(GPIO_IS_VALID_OUTPUT_GPIO(MOTOR_AIN1_GPIO), "AIN1 is not an output GPIO");
+static_assert(GPIO_IS_VALID_OUTPUT_GPIO(MOTOR_AIN2_GPIO), "AIN2 is not an output GPIO");
+static_assert(GPIO_IS_VALID_OUTPUT_GPIO(MOTOR_PWMA_GPIO), "PWMA is not an output GPIO");
+static_assert(GPIO_IS_VALID_OUTPUT_GPIO(MOTOR_STBY_GPIO), "STBY is not an output GPIO");
 
 namespace {
 
@@ -324,3 +337,5 @@ void InitializeN20Spin() {
     static N20Spin spin;
     (void)spin;
 }
+
+#endif

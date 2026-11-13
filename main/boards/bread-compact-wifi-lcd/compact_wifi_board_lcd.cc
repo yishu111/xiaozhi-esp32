@@ -156,7 +156,7 @@ public:
         if (DISPLAY_BACKLIGHT_PIN != GPIO_NUM_NC) {
             GetBacklight()->RestoreBrightness();
         }
-        // After the backlight claims LEDC timer 0 / channel 0. Motor uses timer 1.
+        // GC9A01 has no BLK pin, so backlight PWM is not started and GPIO42 is free.
         InitializeN20Spin();
         
     }

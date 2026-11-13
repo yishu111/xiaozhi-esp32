@@ -266,6 +266,13 @@
 #define DISPLAY_OFFSET_Y  0
 #define DISPLAY_BACKLIGHT_OUTPUT_INVERT false
 #define DISPLAY_SPI_MODE 0
+// This 7-pin panel has no BLK pin; the backlight follows VCC. GPIO42 is free.
+#undef DISPLAY_BACKLIGHT_PIN
+#define DISPLAY_BACKLIGHT_PIN GPIO_NUM_NC
+#define MOTOR_AIN1_GPIO GPIO_NUM_8
+#define MOTOR_AIN2_GPIO GPIO_NUM_9
+#define MOTOR_PWMA_GPIO GPIO_NUM_10
+#define MOTOR_STBY_GPIO GPIO_NUM_42
 #endif
 
 #ifdef CONFIG_LCD_CUSTOM
@@ -285,11 +292,5 @@
 
 // A MCP Test: Control a lamp. Do not reuse this pin for the motor.
 #define LAMP_GPIO GPIO_NUM_18
-
-// TB6612 channel A. STBY is GPIO46 (pull-down at reset). Do not tie STBY high.
-#define MOTOR_AIN1_GPIO GPIO_NUM_8
-#define MOTOR_AIN2_GPIO GPIO_NUM_9
-#define MOTOR_PWMA_GPIO GPIO_NUM_10
-#define MOTOR_STBY_GPIO GPIO_NUM_46
 
 #endif // _BOARD_CONFIG_H_

@@ -196,21 +196,75 @@ class N20PolicyTests(unittest.TestCase):
 class N20SourceTests(unittest.TestCase):
     def test_pins_do_not_take_existing_or_reserved_gpio(self):
         config = (BOARD / "config.h").read_text()
+        start = config.index("#ifdef CONFIG_LCD_GC9A01_240X240")
+        end = config.index("#endif", start)
+        gc9a01 = config[start:end]
         pins = {
             "MOTOR_AIN1_GPIO": 8,
             "MOTOR_AIN2_GPIO": 9,
             "MOTOR_PWMA_GPIO": 10,
-            "MOTOR_STBY_GPIO": 46,
-            "LAMP_GPIO": 18,
+            "MOTOR_STBY_GPIO": 42,
         }
         for name, number in pins.items():
-            self.assertIn(f"#define {name} GPIO_NUM_{number}", config)
+            self.assertIn(f"#define {name} GPIO_NUM_{number}", gc9a01)
+        self.assertIn("#define DISPLAY_BACKLIGHT_PIN GPIO_NUM_NC", gc9a01)
+        self.assertNotIn("GPIO_NUM_46", config)
+        self.assertIn("#define LAMP_GPIO GPIO_NUM_18", config)
 
-        occupied = {0, 4, 5, 6, 7, 15, 16, 18, 19, 20, 21, 35, 36, 37, 40, 41, 42, 43, 44, 45, 47, 48}
-        reserved = {1, 2, 3, 11, 12, 13, 14, 17, 38, 39}
-        motor = {8, 9, 10, 46}
-        self.assertTrue(motor.isdisjoint(occupied))
+        # GPIO42 was the unconnected backlight PWM. The 7-pin panel lights from VCC.
+        still_used = {
+            0, 4, 5, 6, 7, 15, 16, 18, 19, 20, 21, 35, 36, 37, 40, 41, 43, 44, 45, 47, 48
+        }
+        reserved = {1, 2, 3, 11, 12, 13, 14, 17, 38, 39, 46}
+        motor = {8, 9, 10, 42}
+        self.assertTrue(motor.isdisjoint(still_used))
         self.assertTrue(motor.isdisjoint(reserved))
+
+    def test_output_gpio_mask_accepts_motor_pins(self):
+        idf = os.environ.get("IDF_PATH", "")
+        header = pathlib.Path(idf) / "components/soc/esp32s3/include/soc/soc_caps.h" if idf else None
+        if header is None or not header.is_file():
+            self.skipTest("set IDF_PATH to the ESP-IDF tree to check SOC_GPIO_VALID_OUTPUT_GPIO_MASK")
+        text = header.read_text()
+        self.assertIn("SOC_GPIO_VALID_OUTPUT_GPIO_MASK", text)
+        source = r"""
+            #include <stdio.h>
+            #define BIT(n) (1ULL << (n))
+            #define BIT22 BIT(22)
+            #define BIT23 BIT(23)
+            #define BIT24 BIT(24)
+            #define BIT25 BIT(25)
+            #include "soc/soc_caps.h"
+            int main(void) {
+                const int pins[] = {8, 9, 10, 42};
+                for (unsigned i = 0; i < sizeof(pins) / sizeof(pins[0]); ++i) {
+                    unsigned long long bit = 1ULL << pins[i];
+                    if ((SOC_GPIO_VALID_OUTPUT_GPIO_MASK & bit) == 0) {
+                        printf("reject %d\n", pins[i]);
+                        return 1;
+                    }
+                }
+                printf("mask=0x%llx\n", (unsigned long long)SOC_GPIO_VALID_OUTPUT_GPIO_MASK);
+                return 0;
+            }
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "gpio_mask.c"
+            path.write_text(textwrap.dedent(source))
+            binary = pathlib.Path(tmp) / "gpio_mask"
+            subprocess.check_call(
+                [
+                    "cc",
+                    "-Wall",
+                    "-Werror",
+                    "-I",
+                    str(header.parents[1]),
+                    str(path),
+                    "-o",
+                    str(binary),
+                ]
+            )
+            subprocess.check_call([str(binary)])
 
     def test_board_keeps_lamp_and_does_not_register_motor_mcp(self):
         board = (BOARD / "compact_wifi_board_lcd.cc").read_text()

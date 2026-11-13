@@ -15,7 +15,8 @@
 - MAX98357：DOUT GPIO7，BCLK GPIO15，LRCK GPIO16
 - GC9A01：背光 GPIO42，MOSI GPIO47，CLK GPIO21，DC GPIO40，RST GPIO45，CS GPIO41
 - BOOT GPIO0，板载 LED GPIO48
-- TB6612 A 路：AIN1 GPIO8，AIN2 GPIO9，PWMA GPIO10，STBY GPIO46。STBY 默认输出低，不要接到 3V3
+- TB6612 A 路（只在 GC9A01 变体）：AIN1 GPIO8，AIN2 GPIO9，PWMA GPIO10，STBY GPIO42。STBY 默认输出低
+- 这块 7 针圆屏没有 BLK，背光跟着 VCC。GC9A01 变体不再把 GPIO42 配成背光 PWM
 - GPIO18 仍是原来的测试台灯，不要改接电机
 
 GC9A01 参数仍是 `config.h` 里的 240×240、`MIRROR_X`、颜色反转、BGR、SPI mode 0。
@@ -74,7 +75,11 @@ Kconfig 只有一条 `CUSTOM_WAKE_WORD`，写的是 `hi taky` / hi Taky，给没
 
 ## 单路 N20 试转
 
-只给 TB6612 的 A 路。固件里原来没有电机驱动。启停不走 MCP，也不走语音：当前本地服务器把 `tools/list` 里的普通工具交给模型，没有单独的手动调用入口。电机若注册成普通工具，对话就可能让它转。这里只认串口整行命令。
+只给 TB6612 的 A 路，而且只在 GC9A01 变体里打开。ST7789 变体仍用 GPIO42 做背光，不初始化电机。
+
+ESP32-S3 数据手册 v2.2 把 GPIO46 的 IO MUX 功能标成 I/O/T，IDF `release/v6.1` 的 `SOC_GPIO_VALID_OUTPUT_GPIO_MASK` 也包含它（`soc_caps.h` 写着 “No GPIO is input only”）。`GPIO_IS_VALID_OUTPUT_GPIO` 因此认 GPIO46 为输出。这次不用它。这块 7 针屏没有 BLK，背光跟着 VCC，原来配在 GPIO42 上的背光 PWM 没有接到屏。GC9A01 变体改为不启动这块 PWM，把 GPIO42 用作 STBY。AIN1/AIN2/PWMA/STBY 在编译期用 `GPIO_IS_VALID_OUTPUT_GPIO` 检查。
+
+启停不走 MCP，也不走语音：当前本地服务器把 `tools/list` 里的普通工具交给模型，没有单独的手动调用入口。电机若注册成普通工具，对话就可能让它转。这里只认串口整行命令。
 
 在已经打印下面这行的同一个串口里输入，行尾回车。开机时串口里已有的字节会丢掉，所以要先看到这行再输入。
 
@@ -93,7 +98,7 @@ I (...) N20Spin: idle stby=0 duty=0; commands are 'motor start' and 'motor stop'
 
 方向固定为 AIN1 高、AIN2 低。没有编码器，固件不能判断堵转，也不能靠软件保证轮子一定转得起来。30% 和 800 ms 写死在固件里，串口参数改不了。
 
-接线只认丝印，不认线色：GPIO8→AIN1，GPIO9→AIN2，GPIO10→PWMA，GPIO46→STBY，板子 3V3→TB6612 VCC，MT3608 #1 的 5.5V→VM，各模块 GND 连到一起。电机插头只接 M1/M2 到 AO1/AO2。编码器 VCC、C1、C2、GND 这次不接。不要把 STBY 接到 3V3，不要动 GPIO11/12/13、GPIO18。
+接线只认丝印，不认线色：GPIO8→AIN1，GPIO9→AIN2，GPIO10→PWMA，GPIO42→STBY，板子 3V3→TB6612 VCC，MT3608 #1 的 5.5V→VM，各模块 GND 连到一起。电机插头只接 M1/M2 到 AO1/AO2。编码器 VCC、C1、C2、GND 这次不接。不要把 STBY 接到 3V3，不要动 GPIO11/12/13、GPIO18，也不要接 GPIO46。圆屏背光仍由模块 VCC 供电，不经过 GPIO42。
 
 烧录前先断开 VM（电机桥没有电机电源就不会转）。不要整片擦除，不要写 bootloader、分区表、`otadata`（`0xd000`）、NVS（`0x9000`）或 assets（`0x800000`）。现有固件在版本检查成功后打印 `Running partition: ota_0` 或 `ota_1`；只把 `app.bin` 写到对应的 `0x20000` 或 `0x410000`。看不到这一行就不要猜槽位。VM 仍断开时确认出现 `idle`，轮子悬空后再给 VM，并确认它自己不转，然后才发 `motor start`。
 
