@@ -11,6 +11,7 @@
 #include "mcp_server.h"
 #include "lamp_controller.h"
 #include "led/single_led.h"
+#include "n20_spin.h"
 
 #include <esp_log.h>
 #include <driver/i2c_master.h>
@@ -155,6 +156,8 @@ public:
         if (DISPLAY_BACKLIGHT_PIN != GPIO_NUM_NC) {
             GetBacklight()->RestoreBrightness();
         }
+        // After the backlight claims LEDC timer 0 / channel 0. Motor uses timer 1.
+        InitializeN20Spin();
         
     }
 

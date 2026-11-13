@@ -15,6 +15,8 @@
 - MAX98357：DOUT GPIO7，BCLK GPIO15，LRCK GPIO16
 - GC9A01：背光 GPIO42，MOSI GPIO47，CLK GPIO21，DC GPIO40，RST GPIO45，CS GPIO41
 - BOOT GPIO0，板载 LED GPIO48
+- TB6612 A 路：AIN1 GPIO8，AIN2 GPIO9，PWMA GPIO10，STBY GPIO46。STBY 默认输出低，不要接到 3V3
+- GPIO18 仍是原来的测试台灯，不要改接电机
 
 GC9A01 参数仍是 `config.h` 里的 240×240、`MIRROR_X`、颜色反转、BGR、SPI mode 0。
 
@@ -69,6 +71,33 @@ Kconfig 只有一条 `CUSTOM_WAKE_WORD`，写的是 `hi taky` / hi Taky，给没
 显式 `--wake-word nihaoxiaozhi` 或 `hiesp` 仍可临时改回只使用 WakeNet。不传这个参数时，本变体固定是英文 MultiNet 加官方「你好小智」。第一次就认出 HI TAKY 没有保证，需要在实机上听一次。
 
 产物在 `build/`。本仓库的构建说明到此为止，不要在没有确认 bootloader 的情况下把镜像写进 XMC 闪存的板子。
+
+## 单路 N20 试转
+
+只给 TB6612 的 A 路。固件里原来没有电机驱动。启停不走 MCP，也不走语音：当前本地服务器把 `tools/list` 里的普通工具交给模型，没有单独的手动调用入口。电机若注册成普通工具，对话就可能让它转。这里只认串口整行命令。
+
+在已经打印下面这行的同一个串口里输入，行尾回车。开机时串口里已有的字节会丢掉，所以要先看到这行再输入。
+
+```text
+I (...) N20Spin: running app <分区名> at 0x<地址>
+I (...) N20Spin: idle stby=0 duty=0; commands are 'motor start' and 'motor stop'
+```
+
+先等到 `idle` 这一行再输入。分区名是 `ota_0` 或 `ota_1`，地址以这次启动打印的为准。分区表里 `ota_0` 在 `0x20000`、大小 `0x3f0000`，`ota_1` 从 `0x410000` 开始、同样 `0x3f0000`。若初始化失败，后面还会有 `motor io unavailable`，这时不要给 VM 上电。
+
+| 输入 | 结果 | 日志 |
+| --- | --- | --- |
+| `motor start` | 占空比在 200 ms 内升到不超过 30%，到 800 ms 必定停下。运行中再发 start 不会改截止时间 | `start duty_max=30 run_ms=800`，到点 `timeout stop` |
+| `motor stop` | 立刻 STBY 低、PWM 0、AIN1/AIN2 低 | `stop` |
+| 其它非空行 | 输出不变 | `rejected` |
+
+方向固定为 AIN1 高、AIN2 低。没有编码器，固件不能判断堵转，也不能靠软件保证轮子一定转得起来。30% 和 800 ms 写死在固件里，串口参数改不了。
+
+接线只认丝印，不认线色：GPIO8→AIN1，GPIO9→AIN2，GPIO10→PWMA，GPIO46→STBY，板子 3V3→TB6612 VCC，MT3608 #1 的 5.5V→VM，各模块 GND 连到一起。电机插头只接 M1/M2 到 AO1/AO2。编码器 VCC、C1、C2、GND 这次不接。不要把 STBY 接到 3V3，不要动 GPIO11/12/13、GPIO18。
+
+烧录前先断开 VM（电机桥没有电机电源就不会转）。不要整片擦除，不要写 bootloader、分区表、`otadata`（`0xd000`）、NVS（`0x9000`）或 assets（`0x800000`）。现有固件在版本检查成功后打印 `Running partition: ota_0` 或 `ota_1`；只把 `app.bin` 写到对应的 `0x20000` 或 `0x410000`。看不到这一行就不要猜槽位。VM 仍断开时确认出现 `idle`，轮子悬空后再给 VM，并确认它自己不转，然后才发 `motor start`。
+
+不要为了这次试转重打 assets，也不要改 `config.json` 里的 OTA 地址。唤醒词阈值若已在设备 assets 里单独改过，以设备上的那份为准。源码里的 `gc9a01_wake_commands.json` 仍是 `0.2`。
 
 ## XMC 闪存（制造商 ID 0x70）
 

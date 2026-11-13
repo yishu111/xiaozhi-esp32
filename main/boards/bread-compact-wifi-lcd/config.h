@@ -283,7 +283,13 @@
 #endif
 
 
-// A MCP Test: Control a lamp
+// A MCP Test: Control a lamp. Do not reuse this pin for the motor.
 #define LAMP_GPIO GPIO_NUM_18
+
+// TB6612 channel A. STBY is GPIO46 (pull-down at reset). Do not tie STBY high.
+#define MOTOR_AIN1_GPIO GPIO_NUM_8
+#define MOTOR_AIN2_GPIO GPIO_NUM_9
+#define MOTOR_PWMA_GPIO GPIO_NUM_10
+#define MOTOR_STBY_GPIO GPIO_NUM_46
 
 #endif // _BOARD_CONFIG_H_
