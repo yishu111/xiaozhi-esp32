@@ -11,17 +11,23 @@ engine.
 
 | Target | Engine | Wake word | Uplink processing |
 | --- | --- | --- | --- |
-| ESP32-S3 / ESP32-P4 / ESP32-S31 | `AfeAudioEngine` | WakeNet inside AFE, or MultiNet fed from AFE output | FD AEC + VAD when audio processing is enabled |
+| ESP32-S3 / ESP32-P4 / ESP32-S31 | `AfeAudioEngine` | WakeNet inside AFE, MultiNet fed from AFE output, or both when both models are packed | FD AEC + VAD when audio processing is enabled |
 | ESP32 / ESP32-C3 / ESP32-C5 / ESP32-C6 | `LiteAudioEngine` | Standalone WakeNet when configured | Raw mono PCM |
 
 `AfeAudioEngine` owns a single FD AFE instance. WakeNet and voice uplink share
 that instance, so enabling both no longer creates two AFE pipelines. For custom
 MultiNet wake words, AFE fetch output is passed to `CustomWakeWord`; MultiNet is
-not created on the smaller targets.
+not created on the smaller targets. When the packed models contain both a
+WakeNet model and a MultiNet model, both detectors stay armed: WakeNet runs
+inside the AFE, and the same fetch buffer is also fed to MultiNet. Either
+detection wakes the device. The upload cache that is encoded is the one
+belonging to the detector that fired.
 
 `AudioService::GetWakeWords()` returns the phrases supported by the initialized
 engine, independently of the last detected phrase. WakeNet lists only active
 models; MultiNet lists the display text of commands with the `wake` action.
+When both detectors are active the lists are concatenated and duplicate display
+text is dropped.
 After successful startup, the first idle state enables wake-word detection and
 shows these phrases in an assistant chat message after idle UI cleanup. The
 message is removed after five seconds on OLED and LCD displays. The timeout only

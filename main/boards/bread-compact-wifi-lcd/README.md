@@ -40,33 +40,33 @@ Xiaozhi Assistant
 
 然后 `idf.py build`。选中 GC9A01 后，这块板会用 RoboEyes 脸，不再铺官方表情图。LVGL 的 Canvas 需要开着（`CONFIG_LV_USE_CANVAS`，组件默认就是开的；上面的变体也会写上这一项）。
 
-眼睛仍是运行时画出来的，不要拿 EchoEar / Otto 的 emoji 或 GIF 包当主脸。唤醒模型不在脸的画布里：这一变体默认把中文 MultiNet7 打进 assets 分区，所以要保留 `CONFIG_FLASH_DEFAULT_ASSETS=y`（非 Emote 风格的默认值就是 y），并把生成的 assets 一起烧录。界面语言仍用 `--language`，不写进板级配置；中文界面是 `--language zh-CN`。
+眼睛仍是运行时画出来的，不要拿 EchoEar / Otto 的 emoji 或 GIF 包当主脸。唤醒模型不在脸的画布里：这一变体把英文 MultiNet7 和官方 WakeNet「你好小智」一起打进 assets 分区，所以要保留 `CONFIG_FLASH_DEFAULT_ASSETS=y`（非 Emote 风格的默认值就是 y），并把生成的 assets 一起烧录。界面语言仍用 `--language`，不写进板级配置；中文界面是 `--language zh-CN`。
 
 显示风格保持工程默认（Default message style）。微信气泡样式的字幕会被眼睛画布挡住。
 
 ## 唤醒词（只这一变体）
 
-`bread-compact-wifi-lcd`（ST7789）仍走原来的 WakeNet，默认中文是「你好小智」。只有 `bread-compact-wifi-lcd-gc9a01` 改成离线自定义唤醒：`CONFIG_USE_CUSTOM_WAKE_WORD=y`，`CONFIG_USE_AFE_WAKE_WORD` 关闭，中文模型 `CONFIG_SR_MN_CN_MULTINET7_QUANT`（`mn7_cn`）。不打开英文 MultiNet。
+`bread-compact-wifi-lcd`（ST7789）仍走原来的 WakeNet，默认中文是「你好小智」。只有 `bread-compact-wifi-lcd-gc9a01` 同时开两路：
 
-命令词不能中英混写，也不能把英文字母写进 `command`。用户实际发音是 ˈteɪki（tay-kee）。`tei` 和 `ki` 都不在 MultiNet7 `vocab` 里。主读音改成更贴这个音的「泰奇」：`tai`（/tʰai/）比 `te`（/tɤ/，特）更接近 teɪ，`qi`（/tɕʰi/）是词表里最接近 /ki/ 的音节。「hi」仍用「嗨」（`hai`）。`te ji`（特基）偶尔能过门槛，所以留作别名，不再当主读音。七条都是 `action=wake`，阈值仍是设备端 `0.2`（Kconfig 的 20），`duration` 仍是 3000 ms。顺序就是识别优先级，不要打乱：
+- 英文 MultiNet7（`CONFIG_SR_MN_EN_MULTINET7_QUANT`，`mn7_en`）听 “HI TAKY”。`CONFIG_USE_CUSTOM_WAKE_WORD=y`，`CONFIG_USE_AFE_WAKE_WORD` 仍关闭。中文 MultiNet（`mn7_cn`）不打包。
+- 官方 WakeNet `CONFIG_SR_WN_WN9_NIHAOXIAOZHI_TTS` 听「你好小智」。模型在 sdkconfig 里选中后会打进 assets，AFE 里的 WakeNet 和 MultiNet 一起跑。任一路命中都会唤醒。
 
-| 顺序 | 说法 | command | 屏幕 / 上报文本 |
-| --- | --- | --- | --- |
-| 1（主读音） | 你好 Taky | `ni hao tai qi` | 你好Taky |
-| 2 | hi Taky / hi taky | `hai tai qi` | hi Taky |
-| 3 | 近音 | `ni hao te qi` | 你好Taky |
-| 4 | 近音 | `hai te qi` | hi Taky |
-| 5 | 已能偶尔唤醒，保留 | `ni hao te ji` | 你好Taky |
-| 6 | 近音 | `hai te ji` | hi Taky |
-| 7 | 你好小智（回退） | `ni hao xiao zhi` | 你好小智 |
+一条命令不能中英混写，所以没有「你好 Taky」。名字用英文说 HI TAKY，发音是 ˈteɪki（tay-kee）。自动把拼写 TAKY 转成音素会得到 tacky（/tæki/，`TaKm`），所以命令里写死音素：`esp_mn_commands_phoneme_add`。对照 `tool/multinet_g2p.py`，HH=`h`、AY1=`i`、T=`T`、EY1=`d`、K=`K`、IY1=`m`，HI TAKY 就是 `hi TdKm`。另留一条 HEY TAKY（`hd TdKm`），显示文本仍是 `hi Taky`。阈值仍是设备端 `0.2`（Kconfig 的 20），`duration` 仍是 3000 ms。
 
-Kconfig 只有一条 `CUSTOM_WAKE_WORD`，写的是第一条 `ni hao tai qi` / 你好Taky，给没有 assets 模型表时的回退。设备从 assets 启动时，`CustomWakeWord::Initialize` 只读 `index.json` 的 `multinet_model.commands`。这七条在 `gc9a01_wake_commands.json`，由 `scripts/build_default_assets.py --wake_commands` 写进 `index.json`。CMake 只在「面包板 Wi-Fi + LCD」并且 LCD 是 GC9A01 时传入这个文件，其它板型仍是原来的单词。
+| 顺序 | 说法 | command | 音素 | 屏幕 / 上报文本 |
+| --- | --- | --- | --- | --- |
+| 1 | HI TAKY（ˈteɪki） | `hi taky` | `hi TdKm` | hi Taky |
+| 2 | HEY TAKY | `hey taky` | `hd TdKm` | hi Taky |
 
-启动提示走 `GetWakeWords()`，相同显示文本会去重。别名可以共用「你好Taky」和「hi Taky」。中文界面仍是：说「你好Taky / hi Taky / 你好小智」就能唤醒我。
+「你好小智」不在这张表里，它来自 WakeNet 模型名，不是一条 MultiNet 命令。
 
-分区表仍是 `partitions/v2/16m.csv`：`ota_0` 在 `0x20000`、大小 `0x3f0000`，`assets` 在 `0x800000`、大小 8 MiB（8388608 字节）。不要改用 `16m_custom_wakeword.csv`。用 ESP-SR 2.4.7 打出来的 `srmodels.bin` 是 2681351 字节：`mn7_cn` 四个文件（`_MODEL_INFO_`、`vocab`、`mn7_index`、`mn7_data`）加上 MultiNet7 会一起拷贝的 `fst` 目录（`commands_cn.txt` 7298 字节、`commands_en.txt` 2350 字节）。`fst` 里的英文命令文本不是 `mn7_en` 声学模型，sdkconfig 里英文模型保持 `CONFIG_SR_MN_EN_NONE=y`。只有模型时的 `assets.bin` 是 2682075 字节。再加上这块板原来的 `font_noto_sans_common_16_4.bin`（885948 字节）和 21 张 32px 表情（34366 字节），大约 3602389 字节，低于 8 MiB。
+Kconfig 只有一条 `CUSTOM_WAKE_WORD`，写的是 `hi taky` / hi Taky，给没有 assets 模型表时的回退；那条回退没有音素，会走 flite，可能读成 tacky。设备从 assets 启动时，`CustomWakeWord::Initialize` 读 `index.json` 的 `multinet_model.commands`，有 `phonemes` 就调用 `esp_mn_commands_phoneme_add`。这两条在 `gc9a01_wake_commands.json`，由 `scripts/build_default_assets.py --wake_commands` 写进 `index.json`。CMake 只在「面包板 Wi-Fi + LCD」并且 LCD 是 GC9A01 时传入这个文件，其它板型仍是原来的单词。
 
-显式 `--wake-word nihaoxiaozhi` 或 `hiesp` 仍可临时改回 WakeNet。不传这个参数时，本变体固定是上面的自定义唤醒。
+启动提示走 `GetWakeWords()`，相同显示文本会去重。MultiNet 只贡献「hi Taky」，WakeNet 再补上「你好小智」。中文界面是：说「hi Taky / 你好小智」就能唤醒我。BOOT 键仍走原来的 `ToggleChatState()`。
+
+分区表仍是 `partitions/v2/16m.csv`：`ota_0` 在 `0x20000`、大小 `0x3f0000`，`assets` 在 `0x800000`、大小 8 MiB（8388608 字节）。不要改用 `16m_custom_wakeword.csv`。这次打包的是 `mn7_en`（大约 2.74 MiB）、MultiNet7 附带的 `fst`，以及 `wn9_nihaoxiaozhi_tts`（大约 300 KiB）。不要再打 `mn7_cn`。再加上原来的 `font_noto_sans_common_16_4.bin`（885948 字节）和 21 张 32px 表情（34366 字节），合计仍低于 8 MiB。本机没有 ESP-SR 模型文件，所以上面的模型体积是分量估计，不是这次重新量出来的 `assets.bin`。
+
+显式 `--wake-word nihaoxiaozhi` 或 `hiesp` 仍可临时改回只使用 WakeNet。不传这个参数时，本变体固定是英文 MultiNet 加官方「你好小智」。第一次就认出 HI TAKY 没有保证，需要在实机上听一次。
 
 产物在 `build/`。本仓库的构建说明到此为止，不要在没有确认 bootloader 的情况下把镜像写进 XMC 闪存的板子。
 

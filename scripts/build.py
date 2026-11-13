@@ -354,9 +354,11 @@ def _wake_word_sdkconfig_options(
         return normalized, options, ["CONFIG_WAKE_WORD_DISABLED"]
 
     if normalized == "custom":
-        # One Chinese MultiNet7 model. English MultiNet stays off. The phrase
-        # list is not a single Kconfig string; build_default_assets.py merges
-        # a variant JSON when the board asks for one.
+        # English MultiNet7 for explicit-phoneme commands, plus official WakeNet
+        # 「你好小智」. Chinese MultiNet stays off: one command cannot mix
+        # languages, and mn7_cn is not packed beside mn7_en. The phrase list is
+        # not a single Kconfig string; build_default_assets.py merges a variant
+        # JSON when the board asks for one.
         if target not in _AFE_WAKE_WORD_TARGETS:
             raise ValueError(
                 "Custom MultiNet wake word requires ESP32-S3, ESP32-P4, or "
@@ -364,15 +366,16 @@ def _wake_word_sdkconfig_options(
             )
         options.extend((
             "CONFIG_USE_CUSTOM_WAKE_WORD=y",
-            "CONFIG_SR_MN_CN_NONE=n",
-            "CONFIG_SR_MN_CN_MULTINET7_QUANT=y",
-            "CONFIG_SR_MN_EN_NONE=y",
-            "CONFIG_SR_MN_EN_MULTINET7_QUANT=n",
+            "CONFIG_SR_MN_CN_NONE=y",
+            "CONFIG_SR_MN_CN_MULTINET7_QUANT=n",
+            "CONFIG_SR_MN_EN_NONE=n",
+            "CONFIG_SR_MN_EN_MULTINET7_QUANT=y",
+            "CONFIG_SR_WN_WN9_NIHAOXIAOZHI_TTS=y",
         ))
         return "custom", options, [
             "CONFIG_USE_CUSTOM_WAKE_WORD",
-            "CONFIG_SR_MN_CN_MULTINET7_QUANT",
-            "CONFIG_SR_MN_EN_NONE",
+            "CONFIG_SR_MN_EN_MULTINET7_QUANT",
+            "CONFIG_SR_WN_WN9_NIHAOXIAOZHI_TTS",
         ]
 
     if target not in _ESP_WAKE_WORD_TARGETS | _AFE_WAKE_WORD_TARGETS:

@@ -271,9 +271,26 @@ class ConfiguredAssetsTest(unittest.TestCase):
 class WakeCommandAssetsTest(unittest.TestCase):
     COMMANDS = ROOT / "main/boards/bread-compact-wifi-lcd/gc9a01_wake_commands.json"
 
-    def sdkconfig(self, root, custom=True):
+    def sdkconfig(self, root, custom=True, english=False):
         path = root / "sdkconfig"
-        if custom:
+        if english:
+            path.write_text(
+                "\n".join([
+                    'CONFIG_IDF_TARGET="esp32s3"',
+                    "CONFIG_USE_CUSTOM_WAKE_WORD=y",
+                    "CONFIG_USE_AFE_WAKE_WORD=n",
+                    "CONFIG_SR_MN_CN_NONE=y",
+                    "CONFIG_SR_MN_CN_MULTINET7_QUANT=n",
+                    "CONFIG_SR_MN_EN_MULTINET7_QUANT=y",
+                    "CONFIG_SR_WN_WN9_NIHAOXIAOZHI_TTS=y",
+                    'CONFIG_CUSTOM_WAKE_WORD="hi taky"',
+                    'CONFIG_CUSTOM_WAKE_WORD_DISPLAY="hi Taky"',
+                    "CONFIG_CUSTOM_WAKE_WORD_THRESHOLD=20",
+                    "",
+                ]),
+                encoding="utf-8",
+            )
+        elif custom:
             path.write_text(
                 "\n".join([
                     'CONFIG_IDF_TARGET="esp32s3"',
@@ -332,52 +349,45 @@ class WakeCommandAssetsTest(unittest.TestCase):
             self.assertEqual(index["multinet_model"]["threshold"], 0.2)
             self.assertEqual(index["multinet_model"]["duration"], 3000)
 
-    def test_gc9a01_file_replaces_the_single_phrase_with_its_command_list(self):
+    def test_gc9a01_file_packs_english_multinet_phonemes_and_wakenet(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            self.fake_models(root, ["mn7_cn", "fst"])
+            # mn7_cn is present on disk so a "=n" symbol cannot sneak it into the pack.
+            self.fake_models(root, ["mn7_en", "mn7_cn", "fst"])
             result = self.run_builder(
-                root, self.sdkconfig(root), root / "assets.bin", self.COMMANDS,
+                root, self.sdkconfig(root, english=True), root / "assets.bin", self.COMMANDS,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             files = BUILD.read_assets_entries(root / "assets.bin")
             index = json.loads(files["index.json"][0])
             spec = json.loads(self.COMMANDS.read_text(encoding="utf-8"))
             self.assertEqual(index["multinet_model"], {
-                "language": "cn",
+                "language": "en",
                 "duration": 3000,
                 "threshold": 0.2,
                 "commands": spec["commands"],
             })
             self.assertNotIn("xiao tu dou", files["index.json"][0].decode())
+            self.assertNotIn("你好Taky", files["index.json"][0].decode())
             words = []
             for command in index["multinet_model"]["commands"]:
                 if command["action"] == "wake" and command["text"] not in words:
                     words.append(command["text"])
+            self.assertEqual(words, ["hi Taky"])
             self.assertEqual(
-                [item["command"] for item in index["multinet_model"]["commands"]],
-                [
-                    "ni hao tai qi",
-                    "hai tai qi",
-                    "ni hao te qi",
-                    "hai te qi",
-                    "ni hao te ji",
-                    "hai te ji",
-                    "ni hao xiao zhi",
-                ],
+                [item["phonemes"] for item in index["multinet_model"]["commands"]],
+                ["hi TdKm", "hd TdKm"],
             )
-            self.assertEqual(words, ["你好Taky", "hi Taky", "你好小智"])
             models = files["srmodels.bin"][0]
-            self.assertEqual(struct.unpack_from("<I", models)[0], 2)
+            self.assertEqual(struct.unpack_from("<I", models)[0], 3)
             names = []
             offset = 4
-            for _ in range(2):
+            for _ in range(3):
                 names.append(models[offset:offset + 32].split(b"\0", 1)[0].decode())
                 file_count = struct.unpack_from("<I", models, offset + 32)[0]
                 offset += 36 + file_count * 40
-            self.assertCountEqual(names, ["fst", "mn7_cn"])
-            self.assertNotIn(b"mn7_en", models)
-            self.assertNotIn(b"wn9_nihaoxiaozhi_tts", models)
+            self.assertCountEqual(names, ["fst", "mn7_en", "wn9_nihaoxiaozhi_tts"])
+            self.assertNotIn(b"mn7_cn", models)
 
     def test_wake_commands_file_is_ignored_for_wakenet(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -400,23 +410,37 @@ class WakeCommandAssetsTest(unittest.TestCase):
         self.assertIn("gc9a01_wake_commands.json", cmake)
         self.assertEqual(cmake.count("--wake_commands"), 2)
 
-    def test_gc9a01_commands_stay_inside_the_multinet_syllables(self):
+    def test_hi_taky_phonemes_are_teiki_not_tacky(self):
+        # Same single-character classes as esp-sr tool/multinet_g2p.py.
+        alphabet = {
+            "HH": "h", "AY1": "i", "T": "T", "EY1": "d", "AE1": "a", "K": "K", "IY1": "m",
+        }
+
+        def encode(phones):
+            return "".join(alphabet[phone] for phone in phones)
+
+        hi = encode(["HH", "AY1"])
+        taky = encode(["T", "EY1", "K", "IY1"])
+        hey = encode(["HH", "EY1"])
+        tacky = encode(["T", "AE1", "K", "IY1"])
+        self.assertEqual(f"{hi} {taky}", "hi TdKm")
+        self.assertEqual(f"{hey} {taky}", "hd TdKm")
+        self.assertEqual(tacky, "TaKm")
         spec = json.loads(self.COMMANDS.read_text(encoding="utf-8"))
-        allowed = {"ni", "hao", "tai", "qi", "te", "ji", "hai", "xiao", "zhi"}
-        tokens = []
-        for item in spec["commands"]:
-            tokens.extend(item["command"].split(" "))
-        self.assertEqual(tokens[:2], ["ni", "hao"])
-        self.assertIn("tai", tokens)
-        self.assertIn("qi", tokens)
-        self.assertTrue(set(tokens) <= allowed)
-        self.assertNotIn("tei", tokens)
-        self.assertNotIn("ki", tokens)
-        self.assertNotIn("ta", tokens)
-        self.assertNotIn("ke", tokens)
-        self.assertEqual(spec["commands"][0]["command"], "ni hao tai qi")
+        self.assertEqual(spec["language"], "en")
+        self.assertEqual(spec["commands"][0]["command"], "hi taky")
+        self.assertEqual(spec["commands"][0]["phonemes"], f"{hi} {taky}")
+        self.assertNotEqual(spec["commands"][0]["phonemes"], f"{hi} {tacky}")
+        self.assertNotIn("TaKm", spec["commands"][0]["phonemes"])
+        self.assertEqual(spec["commands"][1]["command"], "hey taky")
+        self.assertEqual(spec["commands"][1]["phonemes"], f"{hey} {taky}")
+        self.assertEqual(spec["commands"][1]["text"], "hi Taky")
+        self.assertEqual(len(spec["commands"]), 2)
         self.assertEqual(spec["threshold"], 0.2)
         self.assertEqual(spec["duration"], 3000)
+        for item in spec["commands"]:
+            self.assertNotIn("ni", item["command"].split(" "))
+            self.assertNotRegex(item["command"], r"[A-Z]")
 
     def test_rejected_command_strings(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -432,6 +456,47 @@ class WakeCommandAssetsTest(unittest.TestCase):
                 }],
             }), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "lowercase pinyin"):
+                BUILD.load_wake_commands(path)
+
+            path.write_text(json.dumps({
+                "language": "en",
+                "duration": 3000,
+                "threshold": 0.2,
+                "commands": [{
+                    "command": "hi taky",
+                    "text": "hi Taky",
+                    "action": "wake",
+                }],
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "phonemes"):
+                BUILD.load_wake_commands(path)
+
+            path.write_text(json.dumps({
+                "language": "en",
+                "duration": 3000,
+                "threshold": 0.2,
+                "commands": [{
+                    "command": "HI TAKY",
+                    "text": "hi Taky",
+                    "action": "wake",
+                    "phonemes": "hi TdKm",
+                }],
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "lowercase English"):
+                BUILD.load_wake_commands(path)
+
+            path.write_text(json.dumps({
+                "language": "cn",
+                "duration": 3000,
+                "threshold": 0.2,
+                "commands": [{
+                    "command": "ni hao xiao zhi",
+                    "text": "你好小智",
+                    "action": "wake",
+                    "phonemes": "hi TdKm",
+                }],
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "only valid for language en"):
                 BUILD.load_wake_commands(path)
 
 
