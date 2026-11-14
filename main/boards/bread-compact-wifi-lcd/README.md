@@ -102,7 +102,7 @@ I (...) N20Spin: idle stby=0 duty=0; commands are 'motor start' and 'motor stop'
 
 烧录前先断开 VM（电机桥没有电机电源就不会转）。不要整片擦除，不要写 bootloader、分区表、`otadata`（`0xd000`）、NVS（`0x9000`）或 assets（`0x800000`）。现有固件在版本检查成功后打印 `Running partition: ota_0` 或 `ota_1`；只把 `app.bin` 写到对应的 `0x20000` 或 `0x410000`。看不到这一行就不要猜槽位。VM 仍断开时确认出现 `idle`，轮子悬空后再给 VM，并确认它自己不转，然后才发 `motor start`。
 
-不要为了这次试转重打 assets，也不要改 `config.json` 里的 OTA 地址。唤醒词阈值若已在设备 assets 里单独改过，以设备上的那份为准。源码里的 `gc9a01_wake_commands.json` 仍是 `0.2`。
+不要为了这次试转重打 assets。GC9A01 变体的编译期 OTA 地址是 `http://192.168.31.199:8003/xiaozhi/ota/`。NVS 里如果存着别的 `wifi/ota_url`，那个值优先；只有空值或已经失效的 `192.168.31.73` 才用这份默认。唤醒词阈值若已在设备 assets 里单独改过，以设备上的那份为准。源码里的 `gc9a01_wake_commands.json` 仍是 `0.2`。
 
 ## XMC 闪存（制造商 ID 0x70）
 

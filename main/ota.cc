@@ -56,9 +56,16 @@ Ota::~Ota() {
 std::string Ota::GetCheckVersionUrl() {
     Settings settings("wifi", false);
     std::string url = settings.GetString("ota_url");
-    if (url.empty()) {
+    // Config page can store wifi/ota_url, and that value wins over the build
+    // default. Ignore only the unreachable 192.168.31.73 address. Do not erase NVS.
+    static constexpr char kRetiredOtaUrl[] = "http://192.168.31.73:8003/xiaozhi/ota/";
+    if (url.empty() || url == kRetiredOtaUrl) {
+        if (!url.empty()) {
+            ESP_LOGW(TAG, "Saved OTA URL is retired");
+        }
         url = CONFIG_OTA_URL;
     }
+    ESP_LOGI(TAG, "OTA URL %s", url.c_str());
     return url;
 }
 

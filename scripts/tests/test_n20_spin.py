@@ -280,7 +280,8 @@ class N20SourceTests(unittest.TestCase):
 
     def test_existing_wake_eyes_and_ota_url_stay(self):
         config = (BOARD / "config.json").read_text()
-        self.assertIn('http://192.168.31.73:8003/xiaozhi/ota/', config)
+        self.assertIn('http://192.168.31.199:8003/xiaozhi/ota/', config)
+        self.assertNotIn('192.168.31.73', config)
         wake = (BOARD / "gc9a01_wake_commands.json").read_text()
         self.assertIn('"threshold": 0.2', wake)
         self.assertIn("hi TdKm", wake)
