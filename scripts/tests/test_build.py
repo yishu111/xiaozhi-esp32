@@ -1508,7 +1508,7 @@ class LanguageBuildTests(unittest.TestCase):
             self.assertIn('CONFIG_CUSTOM_WAKE_WORD_DISPLAY="hi Taky"', fragment)
             self.assertIn("CONFIG_CUSTOM_WAKE_WORD_THRESHOLD=20", fragment)
             self.assertIn(
-                'CONFIG_OTA_URL="http://192.168.31.73:8003/xiaozhi/ota/"',
+                'CONFIG_OTA_URL="http://192.168.31.199:8003/xiaozhi/ota/"',
                 fragment,
             )
             self.assertIn("CONFIG_LV_USE_CANVAS=y", fragment)
